@@ -14,6 +14,10 @@ models.build_model(name)으로 구조만 가져온 뒤, 여기서 optimizer/loss
               가장 좋았던 시점의 가중치를 최종본으로 저장 (상한선 config.EPOCHS)
   device     CPU 기준 (torch.cuda.is_available()이면 자동으로 사용)
 
+체크포인트: val_loss가 갱신될 때마다 즉시 디스크에 저장한다(메모리에만 들고
+있다가 끝에 한 번에 저장하지 않음). 학습 도중 세션이 끊겨도 그 시점까지의
+best 가중치와 epoch별 로그가 남는다 (실제로 한 번 겪은 문제라 이렇게 바꿈).
+
 V2에서는 config.TINY_MODELS(tiny_cnn_a/b/c) 3개만 학습 대상이다.
 나머지(baseline_cnn 등)는 1차 실험 결과를 인용하고 재학습하지 않는다
 (config.CITED_REFERENCE_MODELS 참고). 다만 이 스크립트 자체는 등록된 모델이면
@@ -105,8 +109,13 @@ def train_model(
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     loss_fn = nn.CrossEntropyLoss()
 
+    save_path = model_path(model_name)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    log_dir = INTERNAL_RESULT_DIR / model_name
+    log_dir.mkdir(parents=True, exist_ok=True)
+
     best_val_loss = float("inf")
-    best_state = None
+    best_val_acc = None
     best_epoch = -1
     patience_counter = 0
     history = []
@@ -137,37 +146,55 @@ def train_model(
             }
         )
 
-        if val_loss < best_val_loss:
+        improved = val_loss < best_val_loss
+        if improved:
             best_val_loss = val_loss
-            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            best_val_acc = val_acc
             best_epoch = epoch
             patience_counter = 0
+            # 개선될 때마다 즉시 저장 (끝까지 기다리지 않음)
+            torch.save(model.state_dict(), save_path)
         else:
             patience_counter += 1
-            if patience_counter >= patience:
-                print(f"[{model_name}] early stopping (patience={patience}, best_epoch={best_epoch})")
-                break
+
+        # 매 epoch마다 지금까지의 로그를 저장해서, 중간에 끊겨도 진행분이 남게 한다.
+        partial_summary = {
+            "model": model_name,
+            "status": "running",
+            "epochs_ran": len(history),
+            "epochs_limit": epochs,
+            "best_epoch": best_epoch,
+            "best_val_loss": best_val_loss,
+            "best_val_acc": best_val_acc,
+            "elapsed_sec": time.time() - run_start,
+            "batch_size": batch_size,
+            "lr": lr,
+            "patience": patience,
+            "seed": seed,
+            "history": history,
+        }
+        save_json(partial_summary, log_dir / "training_log.json")
+        with open(log_dir / "training_log.csv", "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.DictWriter(f, fieldnames=list(history[0].keys()))
+            writer.writeheader()
+            writer.writerows(history)
+
+        if not improved and patience_counter >= patience:
+            print(f"[{model_name}] early stopping (patience={patience}, best_epoch={best_epoch})")
+            break
 
     total_time = time.time() - run_start
 
-    # 가장 좋았던 시점의 가중치를 최종본으로 저장
-    model.load_state_dict(best_state)
-    save_path = model_path(model_name)
-    save_path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(model.state_dict(), save_path)
-    print(f"[{model_name}] 최종 가중치 저장 (best_epoch={best_epoch}, val_loss={best_val_loss:.4f}): {save_path}")
-
-    # 학습 로그 저장
-    log_dir = INTERNAL_RESULT_DIR / model_name
-    log_dir.mkdir(parents=True, exist_ok=True)
+    print(f"[{model_name}] best 가중치는 이미 저장돼 있음 (best_epoch={best_epoch}, val_loss={best_val_loss:.4f}): {save_path}")
 
     summary = {
         "model": model_name,
+        "status": "completed",
         "epochs_ran": len(history),
         "epochs_limit": epochs,
         "best_epoch": best_epoch,
         "best_val_loss": best_val_loss,
-        "best_val_acc": history[best_epoch - 1]["val_acc"],
+        "best_val_acc": best_val_acc,
         "total_train_time_sec": total_time,
         "batch_size": batch_size,
         "lr": lr,
@@ -176,11 +203,6 @@ def train_model(
         "history": history,
     }
     save_json(summary, log_dir / "training_log.json")
-
-    with open(log_dir / "training_log.csv", "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=list(history[0].keys()))
-        writer.writeheader()
-        writer.writerows(history)
 
     print(f"[{model_name}] 학습 로그 저장: {log_dir}")
     print(f"[{model_name}] 총 학습 시간: {total_time/60:.1f}분")
