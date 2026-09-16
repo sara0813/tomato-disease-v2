@@ -1,0 +1,18 @@
+{
+  "per_class_count": {
+    "Tomato___Bacterial_spot": 93,
+    "Tomato___Early_blight": 84,
+    "Tomato___Late_blight": 179,
+    "Tomato___Leaf_Mold": 303,
+    "Tomato___Septoria_leaf_spot": 0,
+    "Tomato___Spider_mites Two-spotted_spider_mite": 0,
+    "Tomato___Target_Spot": 47,
+    "Tomato___Tomato_Yellow_Leaf_Curl_Virus": 0,
+    "Tomato___Tomato_mosaic_virus": 0,
+    "Tomato___healthy": 395
+  },
+  "skipped_class_id_boxes": 1177,
+  "empty_label_files": 19,
+  "missing_images": 0,
+  "bad_format_boxes": 0
+}
