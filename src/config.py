@@ -75,7 +75,8 @@ CLASS_NAMES_PATH = COMMON_RESULT_DIR / "class_names.json"
 IMG_SIZE = (224, 224)      # 대형 비교 모델 기준 입력 크기
 TINY_IMG_SIZE = (128, 128)  # 경량 모델 기본 입력 크기 (RQ3: 해상도 축소 효과)
 BATCH_SIZE = 32
-EPOCHS = 15
+EPOCHS = 20                 # early stopping 상한선 (보통 이보다 먼저 멈춤)
+EARLY_STOPPING_PATIENCE = 4  # val loss가 이 횟수 연속 개선 안 되면 중단
 SEED = 42
 
 NUM_CLASSES = 10
@@ -87,14 +88,16 @@ SPLIT_RATIO = {"train": 0.70, "val": 0.15, "test": 0.15}
 # ============================================================
 # 실험 대상 모델
 # ============================================================
-# 이번 연구의 주 비교 대상 (직접 설계한 경량 모델 + 경량 기준선)
+# V2에서 실제로 학습시키는 모델은 이 3개뿐이다 (직접 설계한 경량 CNN).
 TINY_MODELS = ["tiny_cnn_a", "tiny_cnn_b", "tiny_cnn_c"]
-LIGHT_BASELINES = ["baseline_cnn", "mobilenetv2"]
 
-# 참고 기준으로만 유지하는 대형 사전학습 모델
-REFERENCE_MODELS = ["efficientnetb0", "densenet121"]
+# baseline_cnn / mobilenetv2 / efficientnetb0 / densenet121은 V2에서 재학습하지
+# 않는다. 1차 실험(V1, docs/의 PDF)에서 이미 이 구조들의 성능을 답했으므로,
+# 그 결과를 참고 기준선으로 인용만 한다. models/reference.py의 build 함수들은
+# 나중에 필요하면(예: 재현 확인) 쓸 수 있도록 남겨두되, 기본 학습 대상은 아니다.
+CITED_REFERENCE_MODELS = ["baseline_cnn", "mobilenetv2", "efficientnetb0", "densenet121"]
 
-ALL_MODELS = TINY_MODELS + LIGHT_BASELINES + REFERENCE_MODELS
+ALL_MODELS = TINY_MODELS + CITED_REFERENCE_MODELS
 
 
 # ============================================================
