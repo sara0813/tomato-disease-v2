@@ -7,11 +7,12 @@ import numpy as np
 
 
 def set_seed(seed: int) -> None:
-    """random / numpy / tensorflow 시드를 한 번에 고정한다."""
+    """random / numpy / torch 시드를 한 번에 고정한다."""
     os.environ["PYTHONHASHSEED"] = str(seed)
     random.seed(seed)
     np.random.seed(seed)
 
-    import tensorflow as tf
+    import torch
 
-    tf.random.set_seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # GPU가 없어도 무해함

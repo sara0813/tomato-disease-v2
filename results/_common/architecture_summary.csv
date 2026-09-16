@@ -1,0 +1,4 @@
+﻿model,description,input_size,params_total,params_trainable,output_shape
+tiny_cnn_a,"최소형 (conv 3블록, 일반 conv)",128x128x3,94762,94762,"(1, 10)"
+tiny_cnn_b,"중간형 (conv 4블록, 일반 conv)",128x128x3,242474,242474,"(1, 10)"
+tiny_cnn_c,"Depthwise (conv 4블록, Depthwise Separable)",128x128x3,31498,31498,"(1, 10)"

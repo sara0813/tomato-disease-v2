@@ -49,8 +49,8 @@ MODEL_DIR = PROJECT_ROOT / "models"
 
 
 def model_path(model_name: str) -> Path:
-    """학습된 모델 가중치 저장 경로."""
-    return MODEL_DIR / f"{model_name}.keras"
+    """학습된 모델 가중치 저장 경로 (PyTorch state_dict)."""
+    return MODEL_DIR / f"{model_name}.pt"
 
 
 # ============================================================
