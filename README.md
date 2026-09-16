@@ -1,366 +1,112 @@
-# Tomato Disease Classification and Monitoring System
+# 경량 CNN 기반 토마토 잎 병해 분류 및 강건성 평가
 
-CNN-based tomato leaf disease classification project using deep learning models and external dataset evaluation.
+> 모델은 더 작게 · 분류 문제는 더 어렵게 · 성능은 안정적으로
 
-This project classifies tomato leaf images into healthy and disease classes using CNN-based deep learning models.  
-The final goal is to build a simple monitoring system that shows the predicted disease name, disease status, class information, and recommended response through a web dashboard.
+실제 촬영 환경의 어려운 이미지에서도 쓸 수 있는 **작고 빠른** 토마토 병해 분류 모델을 직접 설계하고,
+대형 모델과 비교해 **정확도 · 효율성 · 강건성**의 균형을 검증하는 프로젝트.
 
----
+## 연구 질문
 
-## Project Overview
+| | 질문 |
+|---|---|
+| RQ1 | 대형 사전학습 모델보다 훨씬 작은 CNN으로 유사한 내부 분류 성능을 얻을 수 있는가? |
+| RQ2 | 작은 모델이 조명 변화, 블러, 노이즈 및 부분 가림에도 안정적으로 분류할 수 있는가? |
+| RQ3 | 모델 크기와 정확도 사이에서 가장 효율적인 구조는 무엇인가? |
+| RQ4 | PlantVillage로 학습한 경량 모델이 Taiwan · Bangladesh 데이터에도 일반화되는가? |
 
-Tomato diseases can reduce crop productivity and quality.  
-Since many tomato diseases appear visually on leaves, image-based deep learning models can be used to classify disease types automatically.
+## 1차 실험에서 확인한 문제
 
-This project focuses on:
+내부 테스트 정확도는 최대 86.21%였지만 외부 데이터에서는 **9.46 ~ 30.89%로 급락**했다.
+다수 모델이 외부 이미지를 Late Blight로 편향 예측했다. 즉 핵심 문제는 학습 부족이 아니라
+**실제 환경 일반화 실패(domain shift)** 다. Taiwan에서는 가장 단순한 Baseline CNN이 1위였다.
 
-- Tomato leaf disease classification
-- CNN-based model training and comparison
-- Class imbalance analysis and mitigation
-- External dataset evaluation
-- Web dashboard prototype using Streamlit
-- Future robustness test using image corruption
+| 모델 | 내부 Accuracy | Taiwan | Bangladesh BBox |
+|---|---|---|---|
+| EfficientNetB0 | 86.21% | 25.16% | 18.09% |
+| MobileNetV2 | 84.42% | 29.30% | 12.95% |
+| Baseline CNN | 83.32% | **30.89%** | 9.46% |
+| EfficientNetB0 + CW | 82.30% | 23.25% | 12.67% |
+| DenseNet121 | 80.58% | 28.98% | 11.02% |
 
----
+## 데이터셋
 
-## Main Features
+| 데이터 | 역할 | 규모 |
+|---|---|---|
+| PlantVillage Tomato | 학습 · 내부 평가 | 18,160장 / 10개 클래스 (train 12,707 / val 2,719 / test 2,734) |
+| Taiwan Tomato | 외부 환경 평가 | 겹치는 3개 클래스만 사용 |
+| Bangladesh Tomato Leaf | 외부 환경 + BBox 평가 | YOLO bbox 크롭 후 사용 |
 
-- Classifies tomato leaf images into 10 classes
-- Compares multiple CNN-based models
-- Evaluates model performance using accuracy, precision, recall, F1-score, and confusion matrix
-- Tests generalization performance using external datasets
-- Provides a Streamlit-based dashboard prototype
-- Prepares for future image corruption robustness evaluation
+## 실험 로드맵
 
----
+| 단계 | 내용 | 코드 | 산출물 |
+|---|---|---|---|
+| 1 | 경량 모델 설계 (Tiny CNN 3종) | `src/models/tiny_cnn.py` | 구조도 · 파라미터 수 |
+| 2 | 기본 성능 평가 | `src/evaluate/evaluate_internal.py` | `results/internal/` |
+| 3 | 효율성 평가 | `src/evaluate/measure_efficiency.py` | `results/efficiency/` |
+| 4 | Corruption 평가 | `src/evaluate/evaluate_corruption.py` | `results/corruption/` |
+| 5 | 외부 데이터 평가 | `src/evaluate/evaluate_external.py` | `results/external/` |
+| 6 | 최종 모델 선정 | `src/summary/make_summary.py` | `results/summary/` |
+| 7 | 시스템 적용 | `app/streamlit_app.py` | 웹 프로토타입 |
 
-## Dataset
+**Corruption은 학습 증강이 아니라 평가용 변형이다.** 밝기 · 그림자 · 반사 · 블러 · 노이즈 · 가림
+6개 조건 × 약/중/강 3단계로 테스트 이미지만 변형해 모델별 성능 저하율을 비교한다.
 
-### Main Dataset
+최종 모델은 최고 정확도 하나로 고르지 않는다.
+① 내부 성능 ② 외부 일반화 ③ corruption 저하율 ④ 파라미터 수 ⑤ 모델 크기 ⑥ CPU 추론시간을 종합한다.
 
-- PlantVillage tomato leaf dataset
-- 10 tomato classes
-- RGB leaf images
-- Used for training, validation, and testing
+## 폴더 구조
 
-### External Evaluation Datasets
-
-- Taiwan tomato leaves dataset
-- Bangladesh tomato leaf dataset
-
-These external datasets are used to evaluate whether the model trained on PlantVillage can generalize to images from different environments.
-
----
-
-## Classes
-
-The project uses the following 10 tomato classes:
-
-```text
-Tomato___Bacterial_spot
-Tomato___Early_blight
-Tomato___Late_blight
-Tomato___Leaf_Mold
-Tomato___Septoria_leaf_spot
-Tomato___Spider_mites Two-spotted_spider_mite
-Tomato___Target_Spot
-Tomato___Tomato_Yellow_Leaf_Curl_Virus
-Tomato___Tomato_mosaic_virus
-Tomato___healthy
 ```
----
-
-## Models
-
-The following CNN-based models are implemented and compared in this project:
-
-- Baseline CNN
-- DenseNet121
-- EfficientNetB0
-- EfficientNetB0 + Class Weight
-- MobileNetV2
-
-EfficientNetB0 showed the best performance in the first local CPU experiment, so additional experiments such as class weight, augmentation, and fine-tuning are mainly focused on EfficientNetB0.
-
----
-
-## Project Structure
-
-```text
-tomato-disease-project/
-├── app/
-│   └── streamlit_app.py
-│
+tomato_V2/
 ├── data/
-│   ├── raw/
-│   ├── processed/
-│   └── corrupted_test/
-│
-├── models/
-│
-├── results/
-│   └── summary/
-│
+│   ├── raw/              # 원본 (plantvillage, taiwan, bangladesh) — 수정하지 않음
+│   ├── processed/        # PlantVillage train/val/test 분할
+│   ├── external/         # 외부 평가셋 (taiwan, bangladesh_bbox)
+│   └── corrupted/        # corruption 변형 테스트셋
 ├── src/
-│   ├── data_prep/
-│   ├── evaluate/
-│   ├── summary/
-│   ├── train/
-│   ├── visualize/
-│   ├── class_info.py
-│   ├── config.py
-│   └── models.py
-│
-├── .gitignore
-├── README.md
-└── requirements.txt
+│   ├── config.py         # 경로·하이퍼파라미터 전역 설정
+│   ├── class_info.py     # 클래스 정의 + 외부 데이터 클래스 매핑
+│   ├── dataset.py        # tf.data 로더
+│   ├── data_prep/        # 분할 · 외부 데이터 변환 · 점검
+│   ├── models/           # tiny_cnn(A/B/C) · reference · 레지스트리
+│   ├── corruption/       # 변형 정의 · 변형셋 생성
+│   ├── train/            # 학습 (모델 이름 인자 하나로 통일)
+│   ├── evaluate/         # 내부 · 효율 · corruption · 외부 평가
+│   ├── summary/          # 종합 비교표 · 최종 선정
+│   ├── visualize/        # 그래프
+│   └── utils/            # 시드 · 입출력
+├── models/               # 학습된 .keras 가중치
+├── results/              # _common · internal · efficiency · corruption · external · summary · figures
+├── app/                  # Streamlit 웹 프로토타입
+├── notebooks/
+└── docs/                 # 프로젝트 정리 문서
 ```
 
-> Note: `data/`, `models/`, and most files in `results/` are excluded from GitHub because they can be large.  
-> Only summary result files are uploaded for documentation and presentation purposes.
-
----
-
-## Environment
-
-This project was developed using:
-
-- Python 3.11
-- TensorFlow / Keras
-- NumPy
-- Pandas
-- scikit-learn
-- Matplotlib
-- Streamlit
-- VS Code
-- Windows local environment
-
----
-
-## Installation
-
-Clone the repository:
-
-```bash
-git clone https://github.com/sara0813/tomato-disease-project.git
-cd tomato-disease-project
-```
-
-Create and activate a virtual environment:
-
-```bash
-python -m venv .venv
-```
-
-For Windows PowerShell:
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-Install required packages:
+## 실행 순서
 
 ```bash
 pip install -r requirements.txt
+
+# 데이터 준비
+python src/data_prep/split_plantvillage.py
+python src/data_prep/prepare_taiwan.py
+python src/data_prep/prepare_bangladesh_bbox.py
+python src/corruption/make_corrupted_sets.py
+
+# 학습 (모델별)
+python src/train/train_model.py --model tiny_cnn_a
+
+# 평가
+python src/evaluate/evaluate_internal.py
+python src/evaluate/measure_efficiency.py
+python src/evaluate/evaluate_corruption.py
+python src/evaluate/evaluate_external.py
+
+# 종합
+python src/summary/make_summary.py
+python src/visualize/plot_results.py
 ```
 
----
+## 실행 환경
 
-## Dataset Preparation
-
-After downloading the dataset, place the raw PlantVillage tomato dataset under:
-
-```text
-data/raw/plantvillage/
-```
-
-Then split the dataset into train, validation, and test sets:
-
-```bash
-python src/data_prep/split_dataset.py
-```
-
-Check the processed dataset:
-
-```bash
-python src/data_prep/check_processed_dataset.py
-```
-
-Analyze class imbalance:
-
-```bash
-python src/data_prep/analyze_class_imbalance.py
-```
-
-Prepare external evaluation datasets after placing the raw external datasets under `data/raw/`:
-
-```bash
-python src/data_prep/prepare_taiwan_external_test.py
-python src/data_prep/convert_bangladesh_bbox_crop.py
-```
-
----
-
-## Training
-
-Train the Baseline CNN model:
-
-```bash
-python src/train/train_baseline.py
-```
-
-Train the DenseNet121 model:
-
-```bash
-python src/train/train_densenet.py
-```
-
-Train the EfficientNetB0 model:
-
-```bash
-python src/train/train_efficientnet.py
-```
-
-Train the EfficientNetB0 model with class weights:
-
-```bash
-python src/train/train_efficientnet_classweight.py
-```
-
-Train the MobileNetV2 model:
-
-```bash
-python src/train/train_mobilenet.py
-```
-
----
-
-## Evaluation
-
-> Note: Evaluation scripts require trained model files under `models/`.  
-> Since model files are excluded from GitHub, train the models first before running evaluation.
-
-Evaluate each trained model on the PlantVillage test set:
-
-```bash
-python src/evaluate/evaluate_baseline.py
-python src/evaluate/evaluate_densenet.py
-python src/evaluate/evaluate_efficientnet.py
-python src/evaluate/evaluate_efficientnet_classweight.py
-python src/evaluate/evaluate_mobilenet.py
-```
-
-Evaluate external datasets:
-
-```bash
-python src/evaluate/evaluate_external.py taiwan efficientnetb0
-python src/evaluate/evaluate_external.py taiwan efficientnetb0_classweight
-python src/evaluate/evaluate_external.py bangladesh_bbox efficientnetb0
-python src/evaluate/evaluate_external.py bangladesh_bbox mobilenetv2
-```
-
----
-
-## Result Summary
-
-> Note: Summary scripts require previous training and evaluation results to exist under `results/`.
-
-Generate summary tables for presentation and report writing:
-
-```bash
-python src/summary/make_model_comparison_summary.py
-python src/summary/make_classwise_f1_summary.py
-python src/summary/make_external_test_summary.py
-```
-
-Summary files are saved under:
-
-```text
-results/summary/
-```
-
----
-
-## Current Experiment Status
-
-Main summary files:
-
-- `results/summary/model_comparison_summary.md`
-- `results/summary/classwise_f1_summary.md`
-- `results/summary/external_test_summary.md`
-
-Completed:
-
-- PlantVillage dataset preprocessing
-- Baseline CNN training and evaluation
-- DenseNet121 training and evaluation
-- EfficientNetB0 training and evaluation
-- EfficientNetB0 + Class Weight experiment
-- MobileNetV2 training and evaluation
-- Taiwan external dataset evaluation
-- Bangladesh bbox-based external dataset preparation and evaluation
-- Model comparison summary generation
-
-Planned:
-
-- Underrepresented class augmentation experiment
-- EfficientNetB0 fine-tuning
-- Image corruption robustness test
-- Full Streamlit dashboard integration with trained model inference
-
----
-
-## Dashboard
-
-A Streamlit dashboard prototype is included in:
-
-```text
-app/streamlit_app.py
-```
-
-Run the dashboard:
-
-```bash
-streamlit run app/streamlit_app.py
-```
-
-Current dashboard status:
-
-- Image upload UI is implemented
-- Disease class information is prepared
-- Model inference connection will be completed in the next development stage
-
----
-
-## Evaluation Metrics
-
-The models are evaluated using:
-
-- Accuracy
-- Precision
-- Recall
-- F1-score
-- Confusion Matrix
-
-External dataset evaluation is also used to check whether the trained model can generalize beyond the clean PlantVillage dataset.
-
----
-
-## Future Work
-
-The next development steps are:
-
-1. Improve performance on weak classes such as Early Blight and Target Spot
-2. Apply augmentation to underrepresented classes
-3. Fine-tune EfficientNetB0 using GPU
-4. Perform image corruption tests for robustness evaluation
-5. Connect the trained model to the Streamlit dashboard
-6. Display disease name, status, confidence score, symptoms, and recommended response on the dashboard
-
----
-
-## Project Purpose
-
-This project is developed as a capstone design project for tomato disease classification and monitoring.
-
-The goal is not only to achieve high accuracy on clean images, but also to evaluate model robustness and prepare a practical web-based monitoring system.
+로컬 CPU 또는 일반 Colab. 고성능 GPU를 전제하지 않는 크기를 목표로 한다.

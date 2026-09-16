@@ -1,44 +1,7 @@
-import sys
-from pathlib import Path
+"""7단계: 최종 선정된 경량 모델을 붙인 웹 모니터링 프로토타입.
 
-import streamlit as st
-from PIL import Image
+잎 이미지를 업로드하면 병해 클래스와 한국어 설명(class_info.CLASS_INFO)을 보여준다.
+실행: streamlit run app/streamlit_app.py
+"""
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-SRC_DIR = ROOT_DIR / "src"
-sys.path.append(str(SRC_DIR))
-
-from class_info import CLASS_INFO
-
-
-st.set_page_config(
-    page_title="Tomato Disease Monitoring System",
-    page_icon="🍅",
-    layout="centered"
-)
-
-st.title("🍅 Tomato Disease Classification")
-st.write("토마토 잎 이미지를 업로드하면 병해 분류 결과를 보여주는 시스템입니다.")
-
-uploaded_file = st.file_uploader(
-    "토마토 잎 이미지를 업로드하세요.",
-    type=["jpg", "jpeg", "png"]
-)
-
-if uploaded_file is not None:
-    image = Image.open(uploaded_file).convert("RGB")
-
-    st.subheader("업로드한 이미지")
-    st.image(image, use_container_width=True)
-
-    st.info("아직 모델 학습 전입니다. 모델 학습 후 예측 기능이 연결됩니다.")
-
-    st.subheader("분류 클래스 목록")
-
-    for class_name, info in CLASS_INFO.items():
-        with st.expander(f"{info['name_ko']} ({class_name})"):
-            st.write(f"상태: {info['status']}")
-            st.write(f"특징: {info['description']}")
-            st.write(f"권장 대응: {info['recommendation']}")
-else:
-    st.warning("이미지를 업로드하면 결과가 표시됩니다.")
+# TODO: 구현 (최종 모델 선정 후)

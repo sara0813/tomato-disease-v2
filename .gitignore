@@ -1,42 +1,30 @@
-# Python
+# ===== Python =====
 __pycache__/
 *.py[cod]
+.venv/
+venv/
+env/
 .ipynb_checkpoints/
 
-# Virtual environment
-venv/
-.venv/
-
-# Data
+# ===== 데이터 (용량이 커서 커밋하지 않음) =====
 data/raw/
 data/processed/
-data/corrupted_test/
+data/external/
+data/corrupted/
+!data/**/.gitkeep
 
-# Models
-models/
-*.h5
-*.keras
-*.pkl
-*.joblib
+# ===== 학습된 모델 =====
+models/*.keras
+models/*.h5
+!models/.gitkeep
 
-# Results
-results/*
-!results/summary/
-!results/summary/*.csv
-!results/summary/*.md
+# ===== 결과물 =====
+# 지표(csv/json/md)는 커밋하고, 이미지 산출물은 제외
+results/figures/*.png
+!results/**/.gitkeep
 
-# System files
+# ===== OS / 에디터 =====
 .DS_Store
 Thumbs.db
-
-# VSCode
 .vscode/
-
-
-*.zip
-*.log
-.env
-wandb/
-mlruns/
-checkpoints/
-*.ckpt
+.idea/
