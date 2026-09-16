@@ -56,17 +56,25 @@ from utils.io import save_json  # noqa: E402
 from utils.seed import set_seed  # noqa: E402
 
 
-def run_epoch(model, loader, loss_fn, optimizer, device, train: bool) -> tuple[float, float]:
-    """한 epoch을 돌고 (평균 loss, accuracy)를 반환한다. train=False면 평가만 한다."""
+def run_epoch(
+    model, loader, loss_fn, optimizer, device, train: bool, log_prefix: str = "", log_every: int = 20
+) -> tuple[float, float]:
+    """한 epoch을 돌고 (평균 loss, accuracy)를 반환한다. train=False면 평가만 한다.
+
+    log_every 배치마다 지금까지의 누적 loss/acc를 한 줄씩 출력한다 (실시간으로
+    tail 가능하도록 — epoch 끝날 때 한 줄만 찍으면 8~12분 동안 아무것도 안 보여서).
+    """
     model.train() if train else model.eval()
 
     total_loss = 0.0
     total_correct = 0
     total_count = 0
+    n_batches = len(loader)
+    t0 = time.time()
 
     context = torch.enable_grad() if train else torch.no_grad()
     with context:
-        for images, labels in loader:
+        for batch_idx, (images, labels) in enumerate(loader, start=1):
             images, labels = images.to(device), labels.to(device)
 
             if train:
@@ -83,6 +91,14 @@ def run_epoch(model, loader, loss_fn, optimizer, device, train: bool) -> tuple[f
             total_loss += loss.item() * batch_size
             total_correct += (outputs.argmax(dim=1) == labels).sum().item()
             total_count += batch_size
+
+            if log_prefix and (batch_idx % log_every == 0 or batch_idx == n_batches):
+                elapsed = time.time() - t0
+                print(
+                    f"{log_prefix} batch {batch_idx:4d}/{n_batches}  "
+                    f"loss={total_loss/total_count:.4f} acc={total_correct/total_count:.4f}  "
+                    f"({elapsed:.0f}s)"
+                )
 
     return total_loss / total_count, total_correct / total_count
 
@@ -125,8 +141,14 @@ def train_model(
     for epoch in range(1, epochs + 1):
         epoch_start = time.time()
 
-        train_loss, train_acc = run_epoch(model, train_loader, loss_fn, optimizer, device, train=True)
-        val_loss, val_acc = run_epoch(model, val_loader, loss_fn, optimizer, device, train=False)
+        train_loss, train_acc = run_epoch(
+            model, train_loader, loss_fn, optimizer, device, train=True,
+            log_prefix=f"[{model_name}] epoch {epoch:2d}/{epochs} [train]",
+        )
+        val_loss, val_acc = run_epoch(
+            model, val_loader, loss_fn, optimizer, device, train=False,
+            log_prefix=f"[{model_name}] epoch {epoch:2d}/{epochs} [val]",
+        )
 
         epoch_time = time.time() - epoch_start
         print(
