@@ -1,0 +1,27 @@
+{
+  "plantvillage_train": {
+    "checked": 12707,
+    "bad_count": 0,
+    "bad_files": []
+  },
+  "plantvillage_val": {
+    "checked": 2719,
+    "bad_count": 0,
+    "bad_files": []
+  },
+  "plantvillage_test": {
+    "checked": 2734,
+    "bad_count": 0,
+    "bad_files": []
+  },
+  "taiwan_external": {
+    "checked": 314,
+    "bad_count": 0,
+    "bad_files": []
+  },
+  "bangladesh_bbox_external": {
+    "checked": 1101,
+    "bad_count": 0,
+    "bad_files": []
+  }
+}
