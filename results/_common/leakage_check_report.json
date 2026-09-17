@@ -1,26 +1,63 @@
 {
   "test_vs_train": {
     "pair": "test<->train",
-    "n_a": 2734,
-    "n_b": 12707,
+    "n_a": 2727,
+    "n_b": 12706,
     "threshold": 5,
-    "exact_duplicate_count": 3,
-    "near_duplicate_count": 17,
-    "near_duplicate_ratio_of_a": 0.006217995610826628,
+    "exact_duplicate_count": 0,
+    "near_duplicate_count": 24,
+    "near_duplicate_ratio_of_a": 0.0088008800880088,
     "near_duplicate_by_class": {
-      "Tomato___Bacterial_spot": 1,
-      "Tomato___Late_blight": 3,
-      "Tomato___Septoria_leaf_spot": 1,
-      "Tomato___Tomato_Yellow_Leaf_Curl_Virus": 7,
-      "Tomato___healthy": 5
+      "Tomato___Bacterial_spot": 5,
+      "Tomato___Late_blight": 2,
+      "Tomato___Spider_mites Two-spotted_spider_mite": 1,
+      "Tomato___Target_Spot": 1,
+      "Tomato___Tomato_Yellow_Leaf_Curl_Virus": 10,
+      "Tomato___Tomato_mosaic_virus": 1,
+      "Tomato___healthy": 4
     },
     "examples": [
       {
         "distance": 5,
-        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Bacterial_spot\\e0e5620f-d8bb-4f6e-9d87-87aff4b7c230___GCREC_Bact.Sp 5737.JPG",
+        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Bacterial_spot\\02fd4e60-db82-441c-87f6-08de768a4462___GCREC_Bact.Sp 5547.JPG",
         "test_class": "Tomato___Bacterial_spot",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\bbb32822-fa9c-418a-8ec9-b84dd8da65ca___YLCV_GCREC 2808.JPG",
-        "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Bacterial_spot\\6d746b6c-52f8-4831-b541-c74d0984c130___GCREC_Bact.Sp 3169.JPG",
+        "train_class": "Tomato___Bacterial_spot"
+      },
+      {
+        "distance": 5,
+        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Bacterial_spot\\2224e59e-d71f-4d3e-8d48-7dc90551aeb1___UF.GRC_BS_Lab Leaf 0251.JPG",
+        "test_class": "Tomato___Bacterial_spot",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Bacterial_spot\\acbad9e6-d801-48d5-92ee-9fae23fcfb93___UF.GRC_BS_Lab Leaf 0250.JPG",
+        "train_class": "Tomato___Bacterial_spot"
+      },
+      {
+        "distance": 5,
+        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Bacterial_spot\\67da0ec7-c06a-4d27-af36-17b4a1630830___GCREC_Bact.Sp 5619.JPG",
+        "test_class": "Tomato___Bacterial_spot",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Bacterial_spot\\2d135819-8bf4-4d5a-a503-c184ed800d0c___GCREC_Bact.Sp 6015.JPG",
+        "train_class": "Tomato___Bacterial_spot"
+      },
+      {
+        "distance": 5,
+        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Bacterial_spot\\cf155207-09bc-454e-a31b-0d469c9bb3d7___GCREC_Bact.Sp 2989.JPG",
+        "test_class": "Tomato___Bacterial_spot",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Bacterial_spot\\767eb77f-de18-4314-a465-4df8d442f468___GCREC_Bact.Sp 5951.JPG",
+        "train_class": "Tomato___Bacterial_spot"
+      },
+      {
+        "distance": 5,
+        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Bacterial_spot\\f8efccbd-9721-4291-a095-9fb29527bbc4___UF.GRC_BS_Lab Leaf 0235.JPG",
+        "test_class": "Tomato___Bacterial_spot",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Bacterial_spot\\4d02e3e4-c583-402a-adc0-b258c8a3384f___UF.GRC_BS_Lab Leaf 0287.JPG",
+        "train_class": "Tomato___Bacterial_spot"
+      },
+      {
+        "distance": 5,
+        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Late_blight\\16e4a1f9-21c2-4c1a-bdbc-1336da74ba2c___GHLB2 Leaf 145.3.JPG",
+        "test_class": "Tomato___Late_blight",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Late_blight\\bf0b58c2-1d95-4f37-80ea-1bcd82e9c59b___GHLB2 Leaf 145.4.JPG",
+        "train_class": "Tomato___Late_blight"
       },
       {
         "distance": 5,
@@ -30,66 +67,80 @@
         "train_class": "Tomato___Late_blight"
       },
       {
-        "distance": 0,
-        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Late_blight\\98586693-fe1f-4ea0-8e27-4501b61cf09b___GHLB_PS Leaf 23.5 Day 13.jpg",
-        "test_class": "Tomato___Late_blight",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Late_blight\\c1775bad-7c02-41fb-bb7d-f8df91d60ac3___GHLB_PS Leaf 23.5 Day 13.jpg",
-        "train_class": "Tomato___Late_blight"
-      },
-      {
         "distance": 5,
-        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Late_blight\\abc618dc-e185-4866-a09c-6073404cac76___GHLB2 Leaf 153.1.JPG",
-        "test_class": "Tomato___Late_blight",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Late_blight\\de272472-c653-4102-beac-6813da817d21___GHLB2 Leaf 153.2.JPG",
-        "train_class": "Tomato___Late_blight"
-      },
-      {
-        "distance": 5,
-        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Septoria_leaf_spot\\b77f34e1-6fa3-41d6-aea9-b11b8e7e3a04___Matt.S_CG 0955.JPG",
-        "test_class": "Tomato___Septoria_leaf_spot",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Early_blight\\b383b96d-13d9-454a-a179-3093e48d8708___RS_Erly.B 7500.JPG",
-        "train_class": "Tomato___Early_blight"
+        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Spider_mites Two-spotted_spider_mite\\edfb0fe5-a10c-469d-9346-802e68dfcd58___Com.G_SpM_FL 9390.JPG",
+        "test_class": "Tomato___Spider_mites Two-spotted_spider_mite",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Spider_mites Two-spotted_spider_mite\\edd90a56-3a0f-4b3c-a55e-0e0a73bdf18d___Com.G_SpM_FL 1689.JPG",
+        "train_class": "Tomato___Spider_mites Two-spotted_spider_mite"
       },
       {
         "distance": 4,
-        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\1240c7a7-a64a-4659-8849-5451c205208d___UF.GRC_YLCV_Lab 01888.JPG",
+        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Target_Spot\\c6fc37bf-8462-49c9-ac5c-a5f078e34ea4___Com.G_TgS_FL 7958.JPG",
+        "test_class": "Tomato___Target_Spot",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Spider_mites Two-spotted_spider_mite\\e13060fe-90fb-49c9-ab46-9a4cfd68c02a___Com.G_SpM_FL 1749.JPG",
+        "train_class": "Tomato___Spider_mites Two-spotted_spider_mite"
+      },
+      {
+        "distance": 3,
+        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\180ef991-3ed2-41d8-93b6-c1791d745669___UF.GRC_YLCV_Lab 01678.JPG",
         "test_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\08f78a80-46f5-45a6-937c-4d05d61c08c2___UF.GRC_YLCV_Lab 01895.JPG",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\f390848d-e427-4c8e-8e93-0772e9f91fc8___UF.GRC_YLCV_Lab 01668.JPG",
+        "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
+      },
+      {
+        "distance": 5,
+        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\19ead445-c37c-4a22-b3fb-02510e66b553___UF.GRC_YLCV_Lab 01388.JPG",
+        "test_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\b379ab04-3780-4283-b388-2a038b773d79___UF.GRC_YLCV_Lab 01389.JPG",
+        "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
+      },
+      {
+        "distance": 3,
+        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\28df4dbd-4942-4323-9726-f1799df717d9___UF.GRC_YLCV_Lab 02955.JPG",
+        "test_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\7230cf47-a160-4f3e-b9c7-c00d0b283c33___UF.GRC_YLCV_Lab 02956.JPG",
+        "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
+      },
+      {
+        "distance": 5,
+        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\7c74d6cc-d114-4031-a675-2c6bb6ff7b48___UF.GRC_YLCV_Lab 09612.JPG",
+        "test_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\01cc37b3-ab08-44bc-be70-7f14b610f011___UF.GRC_YLCV_Lab 09617.JPG",
+        "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
+      },
+      {
+        "distance": 2,
+        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\bb292b2e-4447-4433-bab9-d8e1e29c7d5b___UF.GRC_YLCV_Lab 02635.JPG",
+        "test_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\a773a7f6-b969-498f-93ad-b14f3b84dbe8___UF.GRC_YLCV_Lab 02634.JPG",
         "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
       },
       {
         "distance": 4,
-        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\3f8efb09-fe91-4a0f-b62f-fc8f626d7b49___UF.GRC_YLCV_Lab 01941.JPG",
+        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\e5fd4586-d720-4e69-892c-9e5e68beee6b___UF.GRC_YLCV_Lab 01727.JPG",
         "test_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\90703f86-170c-4ef4-8fc1-8a165b2eb15e___UF.GRC_YLCV_Lab 01948.JPG",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\7d85c8c9-a4fa-4241-9de5-dd9959ea7a62___UF.GRC_YLCV_Lab 01726.JPG",
         "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
       },
       {
         "distance": 5,
-        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\6afa75f0-ed92-49ed-8e3e-e222f212e5ad___UF.GRC_YLCV_Lab 01591.JPG",
+        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\efce4351-921a-4912-aa56-69f3899f1c95___UF.GRC_YLCV_Lab 02763.JPG",
         "test_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\4ef9186b-1163-40c1-bbdf-2a66c7ea2c39___UF.GRC_YLCV_Lab 01590.JPG",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\0413b5b7-7e05-42ff-b2c6-385edce2dc1a___UF.GRC_YLCV_Lab 02756.JPG",
         "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
       },
       {
         "distance": 5,
-        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\b068a1d4-9a65-44e8-99c7-766a8e827754___UF.GRC_YLCV_Lab 01363.JPG",
+        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\f3918648-a3a6-461e-941a-9920db2f1ca6___UF.GRC_YLCV_Lab 02619.JPG",
         "test_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\c58fa24e-ff44-4b4a-9a13-4a1f05e2fab0___UF.GRC_YLCV_Lab 01379.JPG",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\05cf960c-00c5-4a93-a3d4-0be3ba9871f6___UF.GRC_YLCV_Lab 02633.JPG",
         "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
       },
       {
         "distance": 4,
-        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\b633d977-9372-4286-9a34-792b7fae45b8___YLCV_GCREC 2622.JPG",
+        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\f5a4c551-4500-49c5-904d-6ed08dd43cc0___UF.GRC_YLCV_Lab 03140.JPG",
         "test_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Early_blight\\eccf8abf-a178-464f-ba55-1d203f5f8a47___RS_Erly.B 6395.JPG",
-        "train_class": "Tomato___Early_blight"
-      },
-      {
-        "distance": 5,
-        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\d7e92f44-d414-4201-83f7-40663d5e57c2___UF.GRC_YLCV_Lab 03295.JPG",
-        "test_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\edc3eaab-62d1-43f8-a772-58f435972eb1___UF.GRC_YLCV_Lab 03296.JPG",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\dc871d1b-3150-4783-81a9-ab2b9fd79617___UF.GRC_YLCV_Lab 03136.JPG",
         "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
       },
       {
@@ -100,197 +151,171 @@
         "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
       },
       {
-        "distance": 4,
-        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___healthy\\247e79d6-1874-4ce4-a777-a03a4f94edbf___GH_HL Leaf 211.1.JPG",
-        "test_class": "Tomato___healthy",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___healthy\\e545c1a3-4e0a-4951-be42-4d41a14441d7___GH_HL Leaf 211.JPG",
-        "train_class": "Tomato___healthy"
-      },
-      {
-        "distance": 4,
-        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___healthy\\5c4d21aa-76f8-4ab7-8440-65fd3cac640b___GH_HL Leaf 263.JPG",
-        "test_class": "Tomato___healthy",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___healthy\\7620a603-c3cd-4893-9481-901c9950bb00___GH_HL Leaf 263.1.JPG",
-        "train_class": "Tomato___healthy"
-      },
-      {
-        "distance": 0,
-        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___healthy\\9662364c-aaba-45e3-b907-10792d60578c___GH_HL Leaf 220.JPG",
-        "test_class": "Tomato___healthy",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___healthy\\d2ce7896-6fa4-45e6-96c5-d162da0e3e1c___GH_HL Leaf 220.JPG",
-        "train_class": "Tomato___healthy"
-      },
-      {
-        "distance": 0,
-        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___healthy\\a5de43e7-fc2f-4a14-a8e6-c0f2f94c84f1___GH_HL Leaf 434.JPG",
-        "test_class": "Tomato___healthy",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___healthy\\488feb1c-4b9f-44e7-8aa6-4103a9601f5f___GH_HL Leaf 434.JPG",
-        "train_class": "Tomato___healthy"
-      },
-      {
-        "distance": 4,
-        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___healthy\\e6fdaad9-b536-46c3-a819-faf414cfbf47___GH_HL Leaf 500.2.JPG",
-        "test_class": "Tomato___healthy",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___healthy\\5153c319-4ab2-4ad0-af02-37219b0766d3___GH_HL Leaf 500.3.JPG",
-        "train_class": "Tomato___healthy"
+        "distance": 3,
+        "test_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\test\\Tomato___Tomato_mosaic_virus\\7569fab7-ac19-4ac4-a01b-b77a4abb0c29___PSU_CG 2350.JPG",
+        "test_class": "Tomato___Tomato_mosaic_virus",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_mosaic_virus\\c3ddea5d-2076-46cf-8769-0d200185c259___PSU_CG 2348.JPG",
+        "train_class": "Tomato___Tomato_mosaic_virus"
       }
     ]
   },
   "val_vs_train": {
     "pair": "val<->train",
-    "n_a": 2719,
-    "n_b": 12707,
+    "n_a": 2727,
+    "n_b": 12706,
     "threshold": 5,
-    "exact_duplicate_count": 4,
-    "near_duplicate_count": 24,
-    "near_duplicate_ratio_of_a": 0.008826774549466716,
+    "exact_duplicate_count": 0,
+    "near_duplicate_count": 21,
+    "near_duplicate_ratio_of_a": 0.007700770077007701,
     "near_duplicate_by_class": {
-      "Tomato___Bacterial_spot": 4,
-      "Tomato___Late_blight": 6,
-      "Tomato___Spider_mites Two-spotted_spider_mite": 4,
+      "Tomato___Bacterial_spot": 1,
+      "Tomato___Early_blight": 2,
+      "Tomato___Late_blight": 4,
+      "Tomato___Spider_mites Two-spotted_spider_mite": 2,
+      "Tomato___Target_Spot": 1,
       "Tomato___Tomato_Yellow_Leaf_Curl_Virus": 9,
-      "Tomato___healthy": 1
+      "Tomato___healthy": 2
     },
     "examples": [
       {
         "distance": 5,
-        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Bacterial_spot\\02fd4e60-db82-441c-87f6-08de768a4462___GCREC_Bact.Sp 5547.JPG",
+        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Bacterial_spot\\5cc48c5c-f74c-4e20-820f-e03f8bff3e3e___GCREC_Bact.Sp 6008.JPG",
         "val_class": "Tomato___Bacterial_spot",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Bacterial_spot\\6d746b6c-52f8-4831-b541-c74d0984c130___GCREC_Bact.Sp 3169.JPG",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Bacterial_spot\\aeda6048-63dc-44ea-b479-b139131c3846___GCREC_Bact.Sp 5604.JPG",
         "train_class": "Tomato___Bacterial_spot"
       },
       {
         "distance": 5,
-        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Bacterial_spot\\767eb77f-de18-4314-a465-4df8d442f468___GCREC_Bact.Sp 5951.JPG",
-        "val_class": "Tomato___Bacterial_spot",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Bacterial_spot\\cf155207-09bc-454e-a31b-0d469c9bb3d7___GCREC_Bact.Sp 2989.JPG",
-        "train_class": "Tomato___Bacterial_spot"
+        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Early_blight\\b383b96d-13d9-454a-a179-3093e48d8708___RS_Erly.B 7500.JPG",
+        "val_class": "Tomato___Early_blight",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Septoria_leaf_spot\\b77f34e1-6fa3-41d6-aea9-b11b8e7e3a04___Matt.S_CG 0955.JPG",
+        "train_class": "Tomato___Septoria_leaf_spot"
       },
       {
-        "distance": 5,
-        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Bacterial_spot\\cc10d1bc-301a-4f99-85cb-94c73acfbeea___GCREC_Bact.Sp 3397.JPG",
-        "val_class": "Tomato___Bacterial_spot",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Bacterial_spot\\01a3cf3f-94c1-44d5-8972-8c509d62558e___GCREC_Bact.Sp 3396.JPG",
-        "train_class": "Tomato___Bacterial_spot"
-      },
-      {
-        "distance": 5,
-        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Bacterial_spot\\d78cf219-53eb-4269-830d-e1822caa8fdd___GCREC_Bact.Sp 5755.JPG",
-        "val_class": "Tomato___Bacterial_spot",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Bacterial_spot\\b658ae6e-bdd0-4e49-8709-aa6afcb95c22___GCREC_Bact.Sp 5864.JPG",
-        "train_class": "Tomato___Bacterial_spot"
-      },
-      {
-        "distance": 0,
-        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Late_blight\\5688ea99-c949-41d0-bbab-9cbf0ffb8bcd___GHLB2 Leaf 8677.JPG",
-        "val_class": "Tomato___Late_blight",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Late_blight\\e20107e7-137f-400e-817f-5dc4c58e5d70___GHLB2 Leaf 8677.JPG",
-        "train_class": "Tomato___Late_blight"
-      },
-      {
-        "distance": 0,
-        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Late_blight\\5de6da85-f8c4-48c4-b463-3e6bd78884cc___GHLB_PS Leaf 24 Day 16.jpg",
-        "val_class": "Tomato___Late_blight",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Late_blight\\3fae9c64-18f0-4a67-9f97-554248bb1bed___GHLB_PS Leaf 24 Day 16.jpg",
-        "train_class": "Tomato___Late_blight"
-      },
-      {
-        "distance": 5,
-        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Late_blight\\b4aa6858-29d7-4ff7-9225-e5f003ce8566___GHLB2 Leaf 8856.JPG",
-        "val_class": "Tomato___Late_blight",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Late_blight\\8130621c-8ff8-4fd9-bd54-765491adc31f___GHLB2 Leaf 8822.JPG",
-        "train_class": "Tomato___Late_blight"
-      },
-      {
-        "distance": 5,
-        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Late_blight\\b694de0e-542c-4b7a-b322-30cea130719d___GHLB2 Leaf 8720.JPG",
-        "val_class": "Tomato___Late_blight",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Late_blight\\a86b02a2-3f97-4ce9-a9ff-1a77c36f9e4d___GHLB2 Leaf 8903.JPG",
-        "train_class": "Tomato___Late_blight"
-      },
-      {
-        "distance": 0,
-        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Late_blight\\d82b634e-9a19-497b-b698-aaf100d622a1___GHLB_PS Leaf 24 Day 13.jpg",
-        "val_class": "Tomato___Late_blight",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Late_blight\\861d8b00-57a4-46b0-b51a-09d102dbe119___GHLB_PS Leaf 24 Day 13.jpg",
-        "train_class": "Tomato___Late_blight"
-      },
-      {
-        "distance": 0,
-        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Late_blight\\e5d707cd-077c-43af-bda9-6138e516ff51___GHLB2 Leaf 8999.JPG",
-        "val_class": "Tomato___Late_blight",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Late_blight\\5f21282c-e2ef-4c4a-ace1-b5701fe7effc___GHLB2 Leaf 8999.JPG",
-        "train_class": "Tomato___Late_blight"
-      },
-      {
-        "distance": 5,
-        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Spider_mites Two-spotted_spider_mite\\4aba5f7f-3081-4dbe-9009-f70d962622fa___Com.G_SpM_FL 1619.JPG",
-        "val_class": "Tomato___Spider_mites Two-spotted_spider_mite",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Spider_mites Two-spotted_spider_mite\\88b7e7b3-a94a-449c-8a7b-ed96ec541690___Com.G_SpM_FL 8437.JPG",
-        "train_class": "Tomato___Spider_mites Two-spotted_spider_mite"
-      },
-      {
-        "distance": 5,
-        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Spider_mites Two-spotted_spider_mite\\88a0a43e-d370-483a-926c-a9001af2b3f8___Com.G_SpM_FL 9439.JPG",
-        "val_class": "Tomato___Spider_mites Two-spotted_spider_mite",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Spider_mites Two-spotted_spider_mite\\900402d8-2d24-4d8b-b7b2-556bf2124e1b___Com.G_SpM_FL 9437.JPG",
-        "train_class": "Tomato___Spider_mites Two-spotted_spider_mite"
-      },
-      {
-        "distance": 5,
-        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Spider_mites Two-spotted_spider_mite\\d387a33f-e424-45d2-bf4d-2344a9708129___Com.G_SpM_FL 9352.JPG",
-        "val_class": "Tomato___Spider_mites Two-spotted_spider_mite",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Spider_mites Two-spotted_spider_mite\\b867a878-d563-40e1-a0f5-7037f4918842___Com.G_SpM_FL 1354.JPG",
-        "train_class": "Tomato___Spider_mites Two-spotted_spider_mite"
-      },
-      {
-        "distance": 5,
-        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Spider_mites Two-spotted_spider_mite\\fa0f71aa-5583-4376-ab17-a755cf065aaf___Com.G_SpM_FL 1520.JPG",
-        "val_class": "Tomato___Spider_mites Two-spotted_spider_mite",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Spider_mites Two-spotted_spider_mite\\d83e3292-0be8-43b9-8215-4705a452a08a___Com.G_SpM_FL 1642.JPG",
-        "train_class": "Tomato___Spider_mites Two-spotted_spider_mite"
-      },
-      {
-        "distance": 5,
-        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\162a2c9a-53ec-468c-bbaa-145e7acdb8db___UF.GRC_YLCV_Lab 02537.JPG",
-        "val_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\6bc71828-8107-4cf7-9da1-54ac9f7c73da___UF.GRC_YLCV_Lab 02534.JPG",
-        "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
-      },
-      {
-        "distance": 2,
-        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\1802387a-2c1e-4700-aa3f-2535c62278f0___UF.GRC_YLCV_Lab 02097.JPG",
-        "val_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\d65b18d5-1584-4022-bd18-79c1b181056e___UF.GRC_YLCV_Lab 02098.JPG",
-        "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
-      },
-      {
-        "distance": 2,
-        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\40928b95-6a82-4757-85e1-98d3930f1512___UF.GRC_YLCV_Lab 02076.JPG",
-        "val_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\896c8923-bea5-464a-ab03-db1b9427cac4___UF.GRC_YLCV_Lab 02075.JPG",
+        "distance": 4,
+        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Early_blight\\eccf8abf-a178-464f-ba55-1d203f5f8a47___RS_Erly.B 6395.JPG",
+        "val_class": "Tomato___Early_blight",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\b633d977-9372-4286-9a34-792b7fae45b8___YLCV_GCREC 2622.JPG",
         "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
       },
       {
         "distance": 5,
-        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\67b7c85c-f6e2-419f-b3a7-20bcae8c3afa___UF.GRC_YLCV_Lab 01429.JPG",
+        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Late_blight\\08f6ed0a-4cd0-4bd3-8983-469002cad2d9___GHLB2 Leaf 9078.JPG",
+        "val_class": "Tomato___Late_blight",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Late_blight\\1e65a5c4-ba60-4edb-817c-c281d5a5e364___GHLB2 Leaf 9079.JPG",
+        "train_class": "Tomato___Late_blight"
+      },
+      {
+        "distance": 5,
+        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Late_blight\\8130621c-8ff8-4fd9-bd54-765491adc31f___GHLB2 Leaf 8822.JPG",
+        "val_class": "Tomato___Late_blight",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Late_blight\\b4aa6858-29d7-4ff7-9225-e5f003ce8566___GHLB2 Leaf 8856.JPG",
+        "train_class": "Tomato___Late_blight"
+      },
+      {
+        "distance": 5,
+        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Late_blight\\a86b02a2-3f97-4ce9-a9ff-1a77c36f9e4d___GHLB2 Leaf 8903.JPG",
+        "val_class": "Tomato___Late_blight",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Late_blight\\b694de0e-542c-4b7a-b322-30cea130719d___GHLB2 Leaf 8720.JPG",
+        "train_class": "Tomato___Late_blight"
+      },
+      {
+        "distance": 5,
+        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Late_blight\\abc618dc-e185-4866-a09c-6073404cac76___GHLB2 Leaf 153.1.JPG",
+        "val_class": "Tomato___Late_blight",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Late_blight\\de272472-c653-4102-beac-6813da817d21___GHLB2 Leaf 153.2.JPG",
+        "train_class": "Tomato___Late_blight"
+      },
+      {
+        "distance": 5,
+        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Spider_mites Two-spotted_spider_mite\\cfc8ff1c-5abb-41ef-adf9-c7b1a20d5e67___Com.G_SpM_FL 8743.JPG",
+        "val_class": "Tomato___Spider_mites Two-spotted_spider_mite",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Spider_mites Two-spotted_spider_mite\\09dce947-bb58-46cc-bd33-5a5e75ee07f4___Com.G_SpM_FL 9019.JPG",
+        "train_class": "Tomato___Spider_mites Two-spotted_spider_mite"
+      },
+      {
+        "distance": 5,
+        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Spider_mites Two-spotted_spider_mite\\fd71ebe5-4ce6-4b19-b71e-cb66b034c123___Com.G_SpM_FL 1282.JPG",
+        "val_class": "Tomato___Spider_mites Two-spotted_spider_mite",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Spider_mites Two-spotted_spider_mite\\fa0f71aa-5583-4376-ab17-a755cf065aaf___Com.G_SpM_FL 1520.JPG",
+        "train_class": "Tomato___Spider_mites Two-spotted_spider_mite"
+      },
+      {
+        "distance": 5,
+        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Target_Spot\\217b15a1-dcfc-4cf5-85fa-b305f4ecd708___Com.G_TgS_FL 9919.JPG",
+        "val_class": "Tomato___Target_Spot",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\9ef6528c-3775-4d6a-a876-9f582e8fe295___YLCV_GCREC 2217.JPG",
+        "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
+      },
+      {
+        "distance": 3,
+        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\1d7ce115-b719-4236-948f-5640817b43c3___UF.GRC_YLCV_Lab 02829.JPG",
         "val_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\853a1beb-80b1-4fcd-87c6-1668bfa0c92d___UF.GRC_YLCV_Lab 01428.JPG",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\8d6df373-91b8-4ae8-b358-e9d57a6f3d54___UF.GRC_YLCV_Lab 02828.JPG",
         "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
       },
       {
         "distance": 5,
-        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\7c74d6cc-d114-4031-a675-2c6bb6ff7b48___UF.GRC_YLCV_Lab 09612.JPG",
+        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\2ed63cde-c59e-45df-a38b-ee87197908bb___UF.GRC_YLCV_Lab 01623.JPG",
         "val_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\01cc37b3-ab08-44bc-be70-7f14b610f011___UF.GRC_YLCV_Lab 09617.JPG",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\7c215f7a-4aaf-4461-a727-7e4777daa562___UF.GRC_YLCV_Lab 01624.JPG",
         "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
       },
       {
         "distance": 4,
-        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\906f8e46-f387-4d39-9d7d-08df032222e0___UF.GRC_YLCV_Lab 02498.JPG",
+        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\3f8efb09-fe91-4a0f-b62f-fc8f626d7b49___UF.GRC_YLCV_Lab 01941.JPG",
         "val_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
-        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\f591877b-3f56-491c-b522-8a192a92e78e___UF.GRC_YLCV_Lab 02503.JPG",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\90703f86-170c-4ef4-8fc1-8a165b2eb15e___UF.GRC_YLCV_Lab 01948.JPG",
         "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
+      },
+      {
+        "distance": 5,
+        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\86089870-b24b-4509-abc3-f6c50fd07e49___UF.GRC_YLCV_Lab 01677.JPG",
+        "val_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\793f6f20-096b-4a9e-bd2d-7d9c7cb0f5c2___UF.GRC_YLCV_Lab 01666.JPG",
+        "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
+      },
+      {
+        "distance": 2,
+        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\896c8923-bea5-464a-ab03-db1b9427cac4___UF.GRC_YLCV_Lab 02075.JPG",
+        "val_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\40928b95-6a82-4757-85e1-98d3930f1512___UF.GRC_YLCV_Lab 02076.JPG",
+        "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
+      },
+      {
+        "distance": 5,
+        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\9152d7df-6394-4456-971b-551a87a15028___UF.GRC_YLCV_Lab 01903.JPG",
+        "val_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\08f78a80-46f5-45a6-937c-4d05d61c08c2___UF.GRC_YLCV_Lab 01895.JPG",
+        "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
+      },
+      {
+        "distance": 4,
+        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\9dfccce4-a7a8-491c-b326-850bafbe8ff2___UF.GRC_YLCV_Lab 01640.JPG",
+        "val_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\a65c03a7-d1ef-4e78-931d-881d37383224___UF.GRC_YLCV_Lab 01641.JPG",
+        "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
+      },
+      {
+        "distance": 3,
+        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\e5777f61-ddb7-4acb-bd53-0ca82ba5ab52___UF.GRC_YLCV_Lab 01536.JPG",
+        "val_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\06718520-1ddc-40e0-ada1-37910bc41e36___UF.GRC_YLCV_Lab 01534.JPG",
+        "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
+      },
+      {
+        "distance": 5,
+        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\f9213e8e-6a76-48dc-903c-ab8a98439533___UF.GRC_YLCV_Lab 01744.JPG",
+        "val_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___Tomato_Yellow_Leaf_Curl_Virus\\eeed3bc0-5411-4368-9b94-d1277381111d___UF.GRC_YLCV_Lab 01735.JPG",
+        "train_class": "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
+      },
+      {
+        "distance": 4,
+        "val_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\val\\Tomato___healthy\\5c4d21aa-76f8-4ab7-8440-65fd3cac640b___GH_HL Leaf 263.JPG",
+        "val_class": "Tomato___healthy",
+        "train_path": "E:\\uni\\2026\\tomato_V2\\data\\processed\\plantvillage\\train\\Tomato___healthy\\7620a603-c3cd-4893-9481-901c9950bb00___GH_HL Leaf 263.1.JPG",
+        "train_class": "Tomato___healthy"
       }
     ]
   }

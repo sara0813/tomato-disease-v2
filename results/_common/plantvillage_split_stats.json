@@ -1,62 +1,92 @@
 {
   "Tomato___Bacterial_spot": {
     "total": 2127,
-    "train": 1488,
+    "train": 1489,
     "val": 319,
-    "test": 320
+    "test": 319,
+    "n_hash_groups": 2127,
+    "n_duplicate_groups": 0,
+    "n_images_in_duplicate_groups": 0
   },
   "Tomato___Early_blight": {
     "total": 1000,
     "train": 700,
     "val": 150,
-    "test": 150
+    "test": 150,
+    "n_hash_groups": 1000,
+    "n_duplicate_groups": 0,
+    "n_images_in_duplicate_groups": 0
   },
   "Tomato___Late_blight": {
     "total": 1909,
-    "train": 1336,
-    "val": 286,
-    "test": 287
+    "train": 1335,
+    "val": 287,
+    "test": 287,
+    "n_hash_groups": 1901,
+    "n_duplicate_groups": 8,
+    "n_images_in_duplicate_groups": 16
   },
   "Tomato___Leaf_Mold": {
     "total": 952,
     "train": 666,
-    "val": 142,
-    "test": 144
+    "val": 143,
+    "test": 143,
+    "n_hash_groups": 952,
+    "n_duplicate_groups": 0,
+    "n_images_in_duplicate_groups": 0
   },
   "Tomato___Septoria_leaf_spot": {
     "total": 1771,
     "train": 1239,
-    "val": 265,
-    "test": 267
+    "val": 266,
+    "test": 266,
+    "n_hash_groups": 1771,
+    "n_duplicate_groups": 0,
+    "n_images_in_duplicate_groups": 0
   },
   "Tomato___Spider_mites Two-spotted_spider_mite": {
     "total": 1676,
-    "train": 1173,
-    "val": 251,
-    "test": 252
+    "train": 1172,
+    "val": 252,
+    "test": 252,
+    "n_hash_groups": 1676,
+    "n_duplicate_groups": 0,
+    "n_images_in_duplicate_groups": 0
   },
   "Tomato___Target_Spot": {
     "total": 1404,
     "train": 982,
-    "val": 210,
-    "test": 212
+    "val": 211,
+    "test": 211,
+    "n_hash_groups": 1404,
+    "n_duplicate_groups": 0,
+    "n_images_in_duplicate_groups": 0
   },
   "Tomato___Tomato_Yellow_Leaf_Curl_Virus": {
     "total": 5357,
     "train": 3749,
-    "val": 803,
-    "test": 805
+    "val": 804,
+    "test": 804,
+    "n_hash_groups": 5357,
+    "n_duplicate_groups": 0,
+    "n_images_in_duplicate_groups": 0
   },
   "Tomato___Tomato_mosaic_virus": {
     "total": 373,
     "train": 261,
-    "val": 55,
-    "test": 57
+    "val": 56,
+    "test": 56,
+    "n_hash_groups": 373,
+    "n_duplicate_groups": 0,
+    "n_images_in_duplicate_groups": 0
   },
   "Tomato___healthy": {
     "total": 1591,
     "train": 1113,
-    "val": 238,
-    "test": 240
+    "val": 239,
+    "test": 239,
+    "n_hash_groups": 1585,
+    "n_duplicate_groups": 6,
+    "n_images_in_duplicate_groups": 12
   }
 }
