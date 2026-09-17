@@ -1,0 +1,14 @@
+{
+  "model": "tiny_cnn_c",
+  "dataset": "taiwan",
+  "n_total": 314,
+  "n_classes_present": 3,
+  "classes_present": [
+    "Tomato___Bacterial_spot",
+    "Tomato___Late_blight",
+    "Tomato___healthy"
+  ],
+  "accuracy": 0.2515923566878981,
+  "macro_f1": 0.15985215985215986,
+  "weighted_f1": 0.15035908029538603
+}

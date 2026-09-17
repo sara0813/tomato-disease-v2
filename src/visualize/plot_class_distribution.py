@@ -23,6 +23,7 @@ plt.rcParams["axes.unicode_minus"] = False
 COLOR_PV = "#2a78d6"
 COLOR_TAIWAN = "#2a78d6"
 COLOR_BD = "#eb6834"
+COLOR_PD = "#1baf7a"
 
 
 def main() -> None:
@@ -31,12 +32,17 @@ def main() -> None:
     wide["ko"] = [CLASS_INFO[c]["name_ko"] for c in wide.index]
     wide = wide.sort_values("raw_plantvillage", ascending=True)  # barh는 아래->위로 그려지므로 오름차순
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 6), gridspec_kw={"width_ratios": [1.3, 1, 1]})
+    pv_total = int(wide["raw_plantvillage"].sum())
+    taiwan_total = int(wide["taiwan_external"].sum())
+    bd_total = int(wide["bangladesh_bbox_external"].sum())
+    pd_total = int(wide["plantdoc_external"].sum())
+
+    fig, axes = plt.subplots(1, 4, figsize=(19, 6), gridspec_kw={"width_ratios": [1.3, 1, 1, 1]})
 
     # 1) PlantVillage
     ax = axes[0]
     ax.barh(wide["ko"], wide["raw_plantvillage"], color=COLOR_PV)
-    ax.set_title("PlantVillage (원본, 18,160장)")
+    ax.set_title(f"PlantVillage (원본, {pv_total:,}장)")
     ax.set_xlabel("이미지 수")
     for y, v in enumerate(wide["raw_plantvillage"]):
         ax.text(v + 50, y, f"{int(v):,}", va="center", fontsize=8)
@@ -44,7 +50,7 @@ def main() -> None:
     # 2) Taiwan
     ax = axes[1]
     ax.barh(wide["ko"], wide["taiwan_external"], color=COLOR_TAIWAN)
-    ax.set_title("Taiwan 외부셋 (314장)")
+    ax.set_title(f"Taiwan 외부셋 ({taiwan_total:,}장)")
     ax.set_xlabel("이미지 수")
     ax.set_yticklabels([])
     for y, v in enumerate(wide["taiwan_external"]):
@@ -53,11 +59,20 @@ def main() -> None:
     # 3) Bangladesh
     ax = axes[2]
     ax.barh(wide["ko"], wide["bangladesh_bbox_external"], color=COLOR_BD)
-    ax.set_title("Bangladesh 외부셋 (1,101장)")
+    ax.set_title(f"Bangladesh 외부셋 ({bd_total:,}장)")
     ax.set_xlabel("이미지 수")
     ax.set_yticklabels([])
     for y, v in enumerate(wide["bangladesh_bbox_external"]):
         ax.text(v + 5, y, f"{int(v)}", va="center", fontsize=8)
+
+    # 4) PlantDoc
+    ax = axes[3]
+    ax.barh(wide["ko"], wide["plantdoc_external"], color=COLOR_PD)
+    ax.set_title(f"PlantDoc 외부셋 ({pd_total:,}장)")
+    ax.set_xlabel("이미지 수")
+    ax.set_yticklabels([])
+    for y, v in enumerate(wide["plantdoc_external"]):
+        ax.text(v + 2, y, f"{int(v)}", va="center", fontsize=8)
 
     fig.suptitle("토마토 병해 데이터셋 클래스 분포", fontsize=14, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.96])
