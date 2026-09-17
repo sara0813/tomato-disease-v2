@@ -36,6 +36,7 @@ DATASETS = {
     "plantvillage_test": TEST_DIR,
     "taiwan_external": EXTERNAL_DIRS["taiwan"],
     "bangladesh_bbox_external": EXTERNAL_DIRS["bangladesh_bbox"],
+    "plantdoc_external": EXTERNAL_DIRS["plantdoc"],
 }
 
 

@@ -23,5 +23,15 @@
     "checked": 1101,
     "bad_count": 0,
     "bad_files": []
+  },
+  "plantdoc_external": {
+    "checked": 709,
+    "bad_count": 1,
+    "bad_files": [
+      {
+        "path": "E:\\uni\\2026\\tomato_V2\\data\\external\\plantdoc\\Tomato___Septoria_leaf_spot\\train_Tomato Septoria leaf spot_tomatofactsheet.png.png",
+        "error": "예상 밖 색상 모드: RGBA"
+      }
+    ]
   }
 }

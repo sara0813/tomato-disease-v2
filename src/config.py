@@ -22,6 +22,7 @@ RAW_DIR = DATA_DIR / "raw"
 RAW_PLANTVILLAGE_DIR = RAW_DIR / "plantvillage"
 RAW_TAIWAN_DIR = RAW_DIR / "taiwan"
 RAW_BANGLADESH_DIR = RAW_DIR / "bangladesh"
+RAW_PLANTDOC_DIR = RAW_DIR / "plantdoc"
 
 # 학습용으로 가공한 PlantVillage 분할
 PROCESSED_DIR = DATA_DIR / "processed"
@@ -36,6 +37,7 @@ EXTERNAL_DIR = DATA_DIR / "external"
 EXTERNAL_DIRS = {
     "taiwan": EXTERNAL_DIR / "taiwan",
     "bangladesh_bbox": EXTERNAL_DIR / "bangladesh_bbox",
+    "plantdoc": EXTERNAL_DIR / "plantdoc",
 }
 
 # Corruption 평가용 변형 테스트셋 (4단계)

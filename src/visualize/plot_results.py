@@ -143,20 +143,25 @@ def plot_external_generalization():
         internal = load_json(INTERNAL_RESULT_DIR / m / "metrics.json")["accuracy"]
         taiwan = load_json(EXTERNAL_RESULT_DIR / "taiwan" / m / "metrics.json")["accuracy"]
         bangladesh = load_json(EXTERNAL_RESULT_DIR / "bangladesh_bbox" / m / "metrics.json")["accuracy"]
-        rows.append({"model": m, "내부 (PlantVillage)": internal, "Taiwan": taiwan, "Bangladesh": bangladesh})
+        plantdoc = load_json(EXTERNAL_RESULT_DIR / "plantdoc" / m / "metrics.json")["accuracy"]
+        rows.append({
+            "model": m, "내부 (PlantVillage)": internal, "Taiwan": taiwan,
+            "Bangladesh": bangladesh, "PlantDoc": plantdoc,
+        })
 
     df = pd.DataFrame(rows).set_index("model") * 100
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(11, 6))
     x = np.arange(len(df))
-    width = 0.25
+    width = 0.19
     cols = df.columns.tolist()
-    colors = ["#2a78d6", "#eb6834", "#e34948"]
+    colors = ["#2a78d6", "#eb6834", "#e34948", "#1baf7a"]
 
+    offset0 = -(len(cols) - 1) / 2
     for i, col in enumerate(cols):
-        bars = ax.bar(x + (i - 1) * width, df[col], width, label=col, color=colors[i])
+        bars = ax.bar(x + (offset0 + i) * width, df[col], width, label=col, color=colors[i])
         for b in bars:
-            ax.text(b.get_x() + b.get_width() / 2, b.get_height() + 1, f"{b.get_height():.1f}", ha="center", fontsize=8)
+            ax.text(b.get_x() + b.get_width() / 2, b.get_height() + 1, f"{b.get_height():.1f}", ha="center", fontsize=7)
 
     ax.set_xticks(x)
     ax.set_xticklabels(df.index)

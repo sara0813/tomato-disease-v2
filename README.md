@@ -82,14 +82,16 @@ V1 최고 기록(EfficientNetB0 86.21%)보다 세 모델 모두 높다. `tiny_cn
 
 ### 외부 데이터 일반화 (`results/external/`) — RQ4
 
-| 모델 | 내부 | Taiwan | Bangladesh |
-|---|---|---|---|
-| tiny_cnn_a | 94.99% | 20.38% | 15.26% |
-| tiny_cnn_b | 97.66% | 28.03% | 17.89% |
-| tiny_cnn_c | 97.29% | 27.39% | 15.17% |
+| 모델 | 내부 | Taiwan (3/10 클래스) | Bangladesh (6/10 클래스) | PlantDoc (8/10 클래스) |
+|---|---|---|---|---|
+| tiny_cnn_a | 94.99% | 20.38% | 15.26% | 20.03% |
+| tiny_cnn_b | 97.66% | 28.03% | 17.89% | 20.87% |
+| tiny_cnn_c | 97.29% | 27.39% | 15.17% | 20.87% |
 
 **경량화해도 domain shift 자체는 해결되지 않는다.** V1의 대형 모델과 비슷한 범위로 급락 — 모델
 크기의 문제가 아니라 실제 환경 일반화 자체가 남은 과제라는 프로젝트의 핵심 문제의식이 재확인됨.
+특히 PlantDoc은 클래스 커버리지가 Taiwan(3개)보다 훨씬 넓은데도(8개) 정확도가 비슷한 ~20%대에
+머문다 — 클래스가 안 겹쳐서 낮은 게 아니라 **진짜 도메인 시프트(실제 촬영 조건) 문제**라는 뜻.
 
 ## 데이터셋
 
@@ -98,10 +100,12 @@ V1 최고 기록(EfficientNetB0 86.21%)보다 세 모델 모두 높다. `tiny_cn
 | PlantVillage Tomato | 학습 · 내부 평가 | 18,160장 / 10개 클래스 (70/15/15 층화분할: train 12,707 / val 2,719 / test 2,734) |
 | Taiwan Tomato | 외부 환경 평가 (학습 안 함) | 314장, 겹치는 3개 클래스만 사용 |
 | Bangladesh Tomato Leaf | 외부 환경 + BBox 평가 (학습 안 함) | 1,101장, YOLO bbox + 40% 여백 + 최소 96px 크롭 |
+| PlantDoc | 외부 환경 평가 (학습 안 함) | 709장, 8개 클래스 대응 (Google/Bing 이미지 검색 기반, 원본 746장 중 진단표·비교 콜라주 등 35장 제외) |
 | Corruption 변형셋 | 4단계 강건성 평가 전용 | test셋 × 6조건 × 3단계 = 49,212장 |
 
-품질 검증: 이미지 무결성(19,575장 전수, 손상 0건) · 클래스 불균형 기록(보정 없이 자연 분포 사용,
-14.36배) · train/test leakage 검사(perceptual hash, 0.62~0.88% — 재분할 불필요로 판단).
+품질 검증: 이미지 무결성(20,284장 전수, 콘텐츠 문제 0건) · 클래스 불균형 기록(보정 없이 자연 분포 사용,
+14.36배) · train/test leakage 검사(perceptual hash, 0.62~0.88% — 재분할 불필요로 판단) · PlantDoc은
+콘택트시트 수작업 검수로 잎 사진이 아닌 이미지(진단표/비교 콜라주/삽화) 35장을 걸러냄.
 
 ## 실험 로드맵
 
@@ -161,6 +165,7 @@ py -3.11 -m venv .venv
 python src/data_prep/split_plantvillage.py
 python src/data_prep/prepare_taiwan.py
 python src/data_prep/prepare_bangladesh_bbox.py
+python src/data_prep/prepare_plantdoc.py
 python src/data_prep/verify_image_integrity.py
 python src/data_prep/check_dataset.py
 python src/data_prep/check_leakage.py

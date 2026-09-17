@@ -2,7 +2,7 @@
 
 - CLASS_NAMES: 모델 출력 순서 (PlantVillage 10개 클래스, 알파벳 순)
 - CLASS_INFO: 웹 시스템(7단계)에서 보여줄 한국어 설명
-- TAIWAN_CLASS_MAPPING / BANGLADESH_CLASS_ID_MAPPING: 외부 평가(5단계) 라벨 정렬용
+- TAIWAN_CLASS_MAPPING / BANGLADESH_CLASS_ID_MAPPING / PLANTDOC_CLASS_MAPPING: 외부 평가(5단계) 라벨 정렬용
 """
 
 # ============================================================
@@ -46,6 +46,24 @@ BANGLADESH_CLASS_ID_MAPPING = {
     4: "Tomato___Bacterial_spot",
     5: "Tomato___Target_Spot",
     6: "Tomato___healthy",
+}
+
+# PlantDoc: 9개 토마토 폴더 중 8개가 대응됨 (Taiwan 3/10, Bangladesh 6/10보다 훨씬 많이 겹침).
+# "Tomato two spotted spider mites leaf"는 원본에 단 2장뿐이라(train 2, test 0) 통계적으로
+# 의미가 없어 제외한다. Target_Spot에 대응하는 PlantDoc 폴더는 없다.
+# 실사(Google/Bing 이미지 검색) 기반이라 검색 결과 특성상 진단표·비교 콜라주·삽화 같은
+# "잎 사진이 아닌" 이미지가 섞여 있어, 수작업 콘택트시트 검수로 걸러낸 뒤 사용한다
+# (PLANTDOC_EXCLUDE_FILES, prepare_plantdoc.py 참고).
+PLANTDOC_CLASS_MAPPING = {
+    "Tomato Early blight leaf": "Tomato___Early_blight",
+    "Tomato Septoria leaf spot": "Tomato___Septoria_leaf_spot",
+    "Tomato leaf bacterial spot": "Tomato___Bacterial_spot",
+    "Tomato leaf late blight": "Tomato___Late_blight",
+    "Tomato leaf mosaic virus": "Tomato___Tomato_mosaic_virus",
+    "Tomato leaf yellow virus": "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
+    "Tomato leaf": "Tomato___healthy",
+    "Tomato mold leaf": "Tomato___Leaf_Mold",
+    "Tomato two spotted spider mites leaf": None,  # 원본 2장뿐 → 제외
 }
 
 

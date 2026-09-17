@@ -1,0 +1,19 @@
+{
+  "model": "tiny_cnn_a",
+  "dataset": "plantdoc",
+  "n_total": 709,
+  "n_classes_present": 8,
+  "classes_present": [
+    "Tomato___Bacterial_spot",
+    "Tomato___Early_blight",
+    "Tomato___Late_blight",
+    "Tomato___Leaf_Mold",
+    "Tomato___Septoria_leaf_spot",
+    "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
+    "Tomato___Tomato_mosaic_virus",
+    "Tomato___healthy"
+  ],
+  "accuracy": 0.2002820874471086,
+  "macro_f1": 0.1311841920260342,
+  "weighted_f1": 0.1584957828128261
+}

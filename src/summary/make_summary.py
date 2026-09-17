@@ -37,7 +37,7 @@ COLUMNS = [
     "params", "flops_mflops", "file_size_mb", "cpu_inference_ms",
     "internal_accuracy", "internal_macro_f1", "internal_weighted_f1",
     "corruption_mean_drop_pct",
-    "taiwan_accuracy", "bangladesh_accuracy",
+    "taiwan_accuracy", "bangladesh_accuracy", "plantdoc_accuracy",
 ]
 
 
@@ -49,6 +49,7 @@ def build_v2_rows() -> list[dict]:
         internal = load_json(INTERNAL_RESULT_DIR / m / "metrics.json")
         taiwan = load_json(EXTERNAL_RESULT_DIR / "taiwan" / m / "metrics.json")
         bangladesh = load_json(EXTERNAL_RESULT_DIR / "bangladesh_bbox" / m / "metrics.json")
+        plantdoc = load_json(EXTERNAL_RESULT_DIR / "plantdoc" / m / "metrics.json")
         corruption = pd.read_csv(CORRUPTION_RESULT_DIR / m / "corruption_metrics.csv")
 
         rows.append(
@@ -65,6 +66,7 @@ def build_v2_rows() -> list[dict]:
                 "corruption_mean_drop_pct": corruption["drop_rate_pct"].mean(),
                 "taiwan_accuracy": taiwan["accuracy"],
                 "bangladesh_accuracy": bangladesh["accuracy"],
+                "plantdoc_accuracy": plantdoc["accuracy"],
             }
         )
     return rows
@@ -92,6 +94,7 @@ def build_v1_rows() -> list[dict]:
                 "corruption_mean_drop_pct": None,
                 "taiwan_accuracy": taiwan.get(model_name),
                 "bangladesh_accuracy": bangladesh.get(model_name),
+                "plantdoc_accuracy": None,  # V1은 PlantDoc으로 평가한 적 없음
             }
         )
     return rows
@@ -108,7 +111,7 @@ def main() -> None:
     # 사람이 읽기 좋은 % 표기 버전으로 md 저장
     display_df = df.copy()
     for col in ["internal_accuracy", "internal_macro_f1", "internal_weighted_f1",
-                "corruption_mean_drop_pct", "taiwan_accuracy", "bangladesh_accuracy"]:
+                "corruption_mean_drop_pct", "taiwan_accuracy", "bangladesh_accuracy", "plantdoc_accuracy"]:
         display_df[col] = display_df[col].map(lambda v: f"{v*100:.2f}%" if pd.notna(v) and col != "corruption_mean_drop_pct" else (f"{v:.2f}%" if pd.notna(v) else "—"))
     for col in ["params", "flops_mflops", "file_size_mb", "cpu_inference_ms"]:
         display_df[col] = display_df[col].map(lambda v: "—" if pd.isna(v) else v)
