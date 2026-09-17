@@ -14,9 +14,10 @@ data/corrupted/
 !data/**/.gitkeep
 
 # ===== 학습된 모델 =====
-models/*.pt
-models/*.keras
-models/*.h5
+# seed별 하위폴더(models/<model>/seed<seed>.pt)까지 포함해서 제외
+models/**/*.pt
+models/**/*.keras
+models/**/*.h5
 !models/.gitkeep
 
 # ===== 결과물 =====

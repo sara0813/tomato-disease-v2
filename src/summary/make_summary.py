@@ -23,12 +23,12 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from config import (  # noqa: E402
-    CORRUPTION_RESULT_DIR,
     EFFICIENCY_RESULT_DIR,
-    EXTERNAL_RESULT_DIR,
-    INTERNAL_RESULT_DIR,
     SUMMARY_RESULT_DIR,
     TINY_MODELS,
+    corruption_result_dir,
+    external_result_dir,
+    internal_result_dir,
 )
 from utils.io import load_json  # noqa: E402
 
@@ -46,11 +46,11 @@ def build_v2_rows() -> list[dict]:
     rows = []
 
     for m in TINY_MODELS:
-        internal = load_json(INTERNAL_RESULT_DIR / m / "metrics.json")
-        taiwan = load_json(EXTERNAL_RESULT_DIR / "taiwan" / m / "metrics.json")
-        bangladesh = load_json(EXTERNAL_RESULT_DIR / "bangladesh_bbox" / m / "metrics.json")
-        plantdoc = load_json(EXTERNAL_RESULT_DIR / "plantdoc" / m / "metrics.json")
-        corruption = pd.read_csv(CORRUPTION_RESULT_DIR / m / "corruption_metrics.csv")
+        internal = load_json(internal_result_dir(m) / "metrics.json")
+        taiwan = load_json(external_result_dir("taiwan", m) / "metrics.json")
+        bangladesh = load_json(external_result_dir("bangladesh_bbox", m) / "metrics.json")
+        plantdoc = load_json(external_result_dir("plantdoc", m) / "metrics.json")
+        corruption = pd.read_csv(corruption_result_dir(m) / "corruption_metrics.csv")
 
         rows.append(
             {

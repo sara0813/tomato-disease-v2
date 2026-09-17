@@ -6,13 +6,14 @@ Accuracy 등은 실제로 존재하는(true label이 1개 이상 있는) 클래�
 클래스로 얼마나 편향되게 예측하는지(domain shift 진단)를 볼 수 있게 한다.
 (1차 실험에서 다수 모델이 외부 이미지를 Late Blight로 편향 예측했다.)
 
-산출물 → results/external/<dataset>/<model>/
+산출물 → results/external/<dataset>/<model>/seed<seed>/
     metrics.json
     classification_report.csv     (존재하는 클래스만)
     confusion_matrix.csv          (10개 클래스 전체, true는 존재 클래스만 non-zero)
     prediction_distribution.csv   (10개 클래스 전체 예측 분포)
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -25,7 +26,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from class_info import CLASS_NAMES  # noqa: E402
-from config import EXTERNAL_DIRS, EXTERNAL_RESULT_DIR, TINY_MODELS, model_path  # noqa: E402
+from config import EXTERNAL_DIRS, SEED, TINY_MODELS, external_result_dir, model_path  # noqa: E402
 from dataset import make_external_dataloader  # noqa: E402
 from evaluate.evaluate_internal import predict_all  # noqa: E402
 from models import build_model, input_shape_for  # noqa: E402
@@ -34,10 +35,12 @@ from utils.io import save_json  # noqa: E402
 ALL_LABEL_IDS = list(range(len(CLASS_NAMES)))
 
 
-def evaluate_on_external(model_name: str, dataset_key: str, data_dir: Path, batch_size: int = 32) -> dict:
+def evaluate_on_external(
+    model_name: str, dataset_key: str, data_dir: Path, seed: int = SEED, batch_size: int = 32
+) -> dict:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    weights_path = model_path(model_name)
+    weights_path = model_path(model_name, seed)
     if not weights_path.exists():
         raise FileNotFoundError(f"학습된 가중치가 없습니다: {weights_path}")
 
@@ -72,7 +75,7 @@ def evaluate_on_external(model_name: str, dataset_key: str, data_dir: Path, batc
         }
     ).sort_values("predicted_count", ascending=False)
 
-    out_dir = EXTERNAL_RESULT_DIR / dataset_key / model_name
+    out_dir = external_result_dir(dataset_key, model_name, seed)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     metrics = {
@@ -100,10 +103,14 @@ def evaluate_on_external(model_name: str, dataset_key: str, data_dir: Path, batc
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="5단계: 외부 데이터 일반화 평가")
+    parser.add_argument("--seed", type=int, default=SEED)
+    args = parser.parse_args()
+
     all_results = []
     for dataset_key, data_dir in EXTERNAL_DIRS.items():
         for model_name in TINY_MODELS:
-            all_results.append(evaluate_on_external(model_name, dataset_key, data_dir))
+            all_results.append(evaluate_on_external(model_name, dataset_key, data_dir, seed=args.seed))
 
     print("\n=== 요약 ===")
     for r in all_results:

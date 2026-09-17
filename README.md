@@ -111,7 +111,7 @@ V1 최고 기록(EfficientNetB0 86.21%)보다 세 모델 모두 높다. `tiny_cn
 
 | 단계 | 내용 | 코드 | 산출물 |
 |---|---|---|---|
-| 1 | 경량 모델 설계 (Tiny CNN 3종) | `src/models/tiny_cnn.py`, `src/train/train_model.py` | `models/*.pt`, `results/internal/*/training_log.*` |
+| 1 | 경량 모델 설계 (Tiny CNN 3종) | `src/models/tiny_cnn.py`, `src/train/train_model.py` | `models/*/seed<seed>.pt`, `results/internal/*/seed<seed>/training_log.*` |
 | 2 | 기본 성능 평가 | `src/evaluate/evaluate_internal.py` | `results/internal/` |
 | 3 | 효율성 평가 | `src/evaluate/measure_efficiency.py` | `results/efficiency/` |
 | 4 | Corruption 평가 | `src/evaluate/evaluate_corruption.py` | `results/corruption/` |
@@ -125,6 +125,15 @@ V1 최고 기록(EfficientNetB0 86.21%)보다 세 모델 모두 높다. `tiny_cn
 
 최종 모델은 최고 정확도 하나로 고르지 않는다.
 ① 내부 성능 ② 외부 일반화 ③ corruption 저하율 ④ 파라미터 수 ⑤ 모델 크기 ⑥ CPU 추론시간을 종합한다.
+
+### 반복실험 (재현성)
+
+현재는 seed 42 1회 학습·평가만 완료된 상태다. 결과가 특정 seed의 우연이 아님을 보이기 위해
+`config.SEEDS = [42, 123, 2026]` 3개 seed로 반복 학습·평가하여 평균±표준편차를 보고할 계획이다
+(seed 123, 2026은 아직 미실행). `train_model.py` / `evaluate_*.py`는 모두 `--seed` 인자를 받고,
+`config.model_path()`와 `*_result_dir()` 헬퍼가 seed별로 경로를 분리한다
+(`models/<model>/seed<seed>.pt`, `results/<단계>/<model>/seed<seed>/`)
+— 다른 seed로 다시 실행해도 기존 seed의 가중치·로그는 덮어쓰이지 않는다.
 
 ## 폴더 구조
 
@@ -147,8 +156,9 @@ tomato_V2/
 │   ├── summary/          # 종합 비교표 (V2 실측 + V1 인용, 판단 없음)
 │   ├── visualize/        # 결과 그래프 (results/figures/*.png)
 │   └── utils/            # 시드 · 입출력
-├── models/               # 학습된 .pt 가중치 (git 제외)
+├── models/               # 학습된 .pt 가중치 (git 제외) — <model>/seed<seed>.pt
 ├── results/              # _common · internal · efficiency · corruption · external · summary · figures
+│                         #   (efficiency·summary·figures 제외하고는 <model>/seed<seed>/ 로 분리 저장)
 ├── app/                  # Streamlit 웹 프로토타입 (모델 선택형, 정상/비정상 색상 표시)
 ├── notebooks/
 └── docs/                 # 프로젝트 브리프 PDF + V2 진행 보고 PPTX
@@ -172,11 +182,14 @@ python src/data_prep/check_leakage.py
 python src/corruption/make_corrupted_sets.py
 
 # 학습 — V2에서 실제로 학습하는 건 이 3개뿐 (config.TINY_MODELS)
+# --seed 생략 시 config.SEED(42). 다른 seed로 반복실험하려면 --seed 123 등으로 지정
+# (seed별로 별도 경로에 저장되므로 기존 결과를 덮어쓰지 않는다)
 python src/train/train_model.py --model tiny_cnn_a
 python src/train/train_model.py --model tiny_cnn_b
 python src/train/train_model.py --model tiny_cnn_c
 
-# 평가
+# 평가 — internal/corruption/external은 --seed 지정 가능(생략 시 config.SEED).
+# measure_efficiency는 seed와 무관(구조로만 결정되는 파라미터 수·FLOPs·크기 측정)이라 --seed 없음.
 python src/evaluate/evaluate_internal.py
 python src/evaluate/measure_efficiency.py
 python src/evaluate/evaluate_corruption.py

@@ -23,8 +23,10 @@ V2에서는 config.TINY_MODELS(tiny_cnn_a/b/c) 3개만 학습 대상이다.
 (config.CITED_REFERENCE_MODELS 참고). 다만 이 스크립트 자체는 등록된 모델이면
 어떤 이름이든 받아서 학습할 수 있게 범용으로 만든다.
 
-학습 곡선과 학습 시간은 results/internal/<model>/training_log.{json,csv} 에 저장하고,
-가장 좋은 val loss 시점의 가중치는 config.model_path(model_name) (.pt, state_dict)에 저장한다.
+학습 곡선과 학습 시간은 results/internal/<model>/seed<seed>/training_log.{json,csv} 에 저장하고,
+가장 좋은 val loss 시점의 가중치는 config.model_path(model_name, seed) (.pt, state_dict)에
+저장한다. seed별로 경로가 분리되므로 --seed를 바꿔 반복 실행해도 기존 seed의 결과를
+덮어쓰지 않는다 (반복실험으로 평균·표준편차를 보고할 때 사용).
 """
 
 import argparse
@@ -44,10 +46,10 @@ from config import (  # noqa: E402
     BATCH_SIZE,
     EARLY_STOPPING_PATIENCE,
     EPOCHS,
-    INTERNAL_RESULT_DIR,
     SEED,
     TRAIN_DIR,
     VAL_DIR,
+    internal_result_dir,
     model_path,
 )
 from dataset import make_dataloader  # noqa: E402
@@ -125,9 +127,9 @@ def train_model(
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     loss_fn = nn.CrossEntropyLoss()
 
-    save_path = model_path(model_name)
+    save_path = model_path(model_name, seed)
     save_path.parent.mkdir(parents=True, exist_ok=True)
-    log_dir = INTERNAL_RESULT_DIR / model_name
+    log_dir = internal_result_dir(model_name, seed)
     log_dir.mkdir(parents=True, exist_ok=True)
 
     best_val_loss = float("inf")

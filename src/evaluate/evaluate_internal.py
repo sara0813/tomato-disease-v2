@@ -1,14 +1,15 @@
 """2단계: PlantVillage 원본 테스트셋 성능 평가 (PyTorch).
 
-config.model_path(name)에서 state_dict를 불러와 model.eval() + torch.no_grad()로
+config.model_path(name, seed)에서 state_dict를 불러와 model.eval() + torch.no_grad()로
 추론한다.
 
-산출물 → results/internal/<model>/
+산출물 → results/internal/<model>/seed<seed>/
     metrics.json          Accuracy, Macro F1, Weighted F1
     classification_report.csv
     confusion_matrix.csv
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -21,7 +22,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from class_info import CLASS_NAMES  # noqa: E402
-from config import INTERNAL_RESULT_DIR, TEST_DIR, TINY_MODELS, model_path  # noqa: E402
+from config import SEED, TEST_DIR, TINY_MODELS, internal_result_dir, model_path  # noqa: E402
 from dataset import make_dataloader  # noqa: E402
 from models import build_model, input_shape_for  # noqa: E402
 from utils.io import save_json  # noqa: E402
@@ -40,10 +41,10 @@ def predict_all(model, loader, device) -> tuple[list[int], list[int]]:
     return all_preds, all_labels
 
 
-def evaluate_model(model_name: str, batch_size: int = 32) -> dict:
+def evaluate_model(model_name: str, seed: int = SEED, batch_size: int = 32) -> dict:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    weights_path = model_path(model_name)
+    weights_path = model_path(model_name, seed)
     if not weights_path.exists():
         raise FileNotFoundError(f"학습된 가중치가 없습니다: {weights_path} (먼저 train_model.py 실행)")
 
@@ -65,7 +66,7 @@ def evaluate_model(model_name: str, batch_size: int = 32) -> dict:
     )
     cm = confusion_matrix(labels, preds, labels=list(range(len(CLASS_NAMES))))
 
-    out_dir = INTERNAL_RESULT_DIR / model_name
+    out_dir = internal_result_dir(model_name, seed)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     metrics = {
@@ -90,7 +91,11 @@ def evaluate_model(model_name: str, batch_size: int = 32) -> dict:
 
 
 def main() -> None:
-    results = [evaluate_model(name) for name in TINY_MODELS]
+    parser = argparse.ArgumentParser(description="2단계: 내부 성능 평가")
+    parser.add_argument("--seed", type=int, default=SEED)
+    args = parser.parse_args()
+
+    results = [evaluate_model(name, seed=args.seed) for name in TINY_MODELS]
 
     print("\n=== 요약 ===")
     for r in results:

@@ -24,13 +24,13 @@ if str(SRC_DIR) not in sys.path:
 
 from class_info import CLASS_INFO, CLASS_NAMES  # noqa: E402
 from config import (  # noqa: E402
-    CORRUPTION_RESULT_DIR,
     EFFICIENCY_RESULT_DIR,
-    EXTERNAL_RESULT_DIR,
     FIGURE_DIR,
-    INTERNAL_RESULT_DIR,
     SUMMARY_RESULT_DIR,
     TINY_MODELS,
+    corruption_result_dir,
+    external_result_dir,
+    internal_result_dir,
 )
 from utils.io import load_json  # noqa: E402
 
@@ -44,7 +44,7 @@ KO_NAMES = {c: CLASS_INFO[c]["name_ko"] for c in CLASS_NAMES}
 
 
 def plot_accuracy_comparison():
-    v2_acc = {m: load_json(INTERNAL_RESULT_DIR / m / "metrics.json")["accuracy"] for m in TINY_MODELS}
+    v2_acc = {m: load_json(internal_result_dir(m) / "metrics.json")["accuracy"] for m in TINY_MODELS}
     v1 = load_json(SUMMARY_RESULT_DIR / "v1_cited_reference.json")["internal"]
 
     rows = [(m, acc, "V2 (직접 학습)") for m, acc in v2_acc.items()]
@@ -69,7 +69,7 @@ def plot_accuracy_comparison():
 
 def plot_efficiency_tradeoff():
     eff = pd.read_csv(EFFICIENCY_RESULT_DIR / "efficiency.csv")
-    acc = {m: load_json(INTERNAL_RESULT_DIR / m / "metrics.json")["accuracy"] for m in TINY_MODELS}
+    acc = {m: load_json(internal_result_dir(m) / "metrics.json")["accuracy"] for m in TINY_MODELS}
     eff["accuracy"] = eff["model"].map(acc) * 100
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 5.5))
@@ -97,7 +97,7 @@ def plot_efficiency_tradeoff():
 
 
 def plot_corruption_drop():
-    dfs = [pd.read_csv(CORRUPTION_RESULT_DIR / m / "corruption_metrics.csv") for m in TINY_MODELS]
+    dfs = [pd.read_csv(corruption_result_dir(m) / "corruption_metrics.csv") for m in TINY_MODELS]
     df = pd.concat(dfs, ignore_index=True)
 
     conditions = df.groupby("corruption_type")["drop_rate_pct"].mean().sort_values().index.tolist()
@@ -140,10 +140,10 @@ def plot_corruption_drop():
 def plot_external_generalization():
     rows = []
     for m in TINY_MODELS:
-        internal = load_json(INTERNAL_RESULT_DIR / m / "metrics.json")["accuracy"]
-        taiwan = load_json(EXTERNAL_RESULT_DIR / "taiwan" / m / "metrics.json")["accuracy"]
-        bangladesh = load_json(EXTERNAL_RESULT_DIR / "bangladesh_bbox" / m / "metrics.json")["accuracy"]
-        plantdoc = load_json(EXTERNAL_RESULT_DIR / "plantdoc" / m / "metrics.json")["accuracy"]
+        internal = load_json(internal_result_dir(m) / "metrics.json")["accuracy"]
+        taiwan = load_json(external_result_dir("taiwan", m) / "metrics.json")["accuracy"]
+        bangladesh = load_json(external_result_dir("bangladesh_bbox", m) / "metrics.json")["accuracy"]
+        plantdoc = load_json(external_result_dir("plantdoc", m) / "metrics.json")["accuracy"]
         rows.append({
             "model": m, "내부 (PlantVillage)": internal, "Taiwan": taiwan,
             "Bangladesh": bangladesh, "PlantDoc": plantdoc,
@@ -176,7 +176,7 @@ def plot_external_generalization():
 
 def plot_confusion_matrices():
     for m in TINY_MODELS:
-        cm = pd.read_csv(INTERNAL_RESULT_DIR / m / "confusion_matrix.csv", index_col=0)
+        cm = pd.read_csv(internal_result_dir(m) / "confusion_matrix.csv", index_col=0)
         cm_norm = cm.div(cm.sum(axis=1), axis=0)  # 행(실제 클래스) 기준 정규화
 
         labels = [KO_NAMES[c] for c in cm.index]
