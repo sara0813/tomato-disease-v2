@@ -8,7 +8,7 @@
   규제         적정 Dropout               → 과적합 억제
 
 변형 3종 (입력 128x128x3, 기본 num_classes=10)
-  tiny_cnn_a  최소형    conv 3블록 (32→64→128), 일반 conv        약 2.4만 파라미터
+  tiny_cnn_a  최소형    conv 3블록 (32→64→128), 일반 conv        약 9.5만 파라미터
   tiny_cnn_b  중간형    conv 4블록 (32→64→128→128), 일반 conv    약 24만 파라미터
   tiny_cnn_c  Depthwise B와 같은 4블록 깊이, stem 이후 Depthwise
               Separable Conv 적용                                약 3.1만 파라미터
