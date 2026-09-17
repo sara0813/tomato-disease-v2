@@ -29,3 +29,6 @@ results/figures/*.png
 Thumbs.db
 .vscode/
 .idea/
+
+# ===== Office 임시 잠금 파일 =====
+~$*
