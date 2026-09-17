@@ -15,11 +15,13 @@ torchvision.datasets.ImageFolder로 그대로 읽는다.
 from pathlib import Path
 
 import torch
-from torch.utils.data import DataLoader
+from PIL import Image
+from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
 
 from class_info import CLASS_NAMES
+from utils.io import iter_images
 
 # ImageNet 사전학습 가중치(MobileNetV2 등 reference 모델)와 통계를 맞춰둔다.
 # Tiny CNN처럼 스크래치로 학습하는 모델도 같은 정규화를 써서 파이프라인을 통일한다.
@@ -73,7 +75,50 @@ def count_per_class(directory: Path) -> dict[str, int]:
     """클래스별 이미지 장수를 센다 (불균형 확인용, 텐서 변환 없이 파일만 카운트)."""
     counts: dict[str, int] = {}
     for class_dir in sorted(p for p in directory.iterdir() if p.is_dir()):
-        from utils.io import iter_images
-
         counts[class_dir.name] = sum(1 for _ in iter_images(class_dir))
     return counts
+
+
+class ExternalImageDataset(Dataset):
+    """외부 평가셋(Taiwan/Bangladesh)용 데이터셋.
+
+    torchvision ImageFolder는 클래스 폴더가 하나라도 비어 있으면
+    FileNotFoundError를 낸다. 외부셋은 10개 클래스 중 일부만 실제로
+    존재해서(나머지는 빈 폴더) ImageFolder를 못 쓴다. 대신 CLASS_NAMES
+    순서를 기준으로 직접 파일 목록을 만들어 라벨 인덱스를 고정한다.
+    """
+
+    def __init__(self, root: Path, img_size: tuple[int, int]):
+        self.transform = make_transform(img_size)
+        self.samples: list[tuple[Path, int]] = []
+        for label_idx, class_name in enumerate(CLASS_NAMES):
+            class_dir = Path(root) / class_name
+            if not class_dir.exists():
+                continue
+            for img_path in iter_images(class_dir):
+                self.samples.append((img_path, label_idx))
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, index: int):
+        path, label = self.samples[index]
+        with Image.open(path) as img:
+            img = img.convert("RGB")
+            return self.transform(img), label
+
+
+def make_external_dataloader(
+    directory: Path,
+    img_size: tuple[int, int],
+    batch_size: int,
+    num_workers: int = 0,
+) -> DataLoader:
+    dataset = ExternalImageDataset(directory, img_size)
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=torch.cuda.is_available(),
+    )

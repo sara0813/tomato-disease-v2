@@ -1,0 +1,17 @@
+{
+  "model": "tiny_cnn_a",
+  "dataset": "bangladesh_bbox",
+  "n_total": 1101,
+  "n_classes_present": 6,
+  "classes_present": [
+    "Tomato___Bacterial_spot",
+    "Tomato___Early_blight",
+    "Tomato___Late_blight",
+    "Tomato___Leaf_Mold",
+    "Tomato___Target_Spot",
+    "Tomato___healthy"
+  ],
+  "accuracy": 0.15258855585831063,
+  "macro_f1": 0.13775846478521864,
+  "weighted_f1": 0.10413060757648754
+}
