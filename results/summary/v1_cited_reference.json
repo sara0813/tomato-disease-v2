@@ -1,0 +1,24 @@
+{
+  "_note": "docs/의 1차 실험(V1) PDF에서 인용한 수치. V2에서 재학습하지 않음(config.CITED_REFERENCE_MODELS). V1은 효율성(FLOPs/추론시간)과 corruption 평가를 하지 않았으므로 해당 항목은 없음(null).",
+  "internal": {
+    "efficientnetb0":        {"accuracy": 0.8621, "macro_f1": 0.8131, "weighted_f1": 0.8588},
+    "mobilenetv2":            {"accuracy": 0.8442, "macro_f1": 0.7667, "weighted_f1": 0.8345},
+    "baseline_cnn":           {"accuracy": 0.8332, "macro_f1": 0.7749, "weighted_f1": 0.8238},
+    "efficientnetb0_classweight": {"accuracy": 0.8230, "macro_f1": 0.7935, "weighted_f1": 0.8280},
+    "densenet121":            {"accuracy": 0.8058, "macro_f1": 0.7433, "weighted_f1": 0.8076}
+  },
+  "external_taiwan": {
+    "baseline_cnn": 0.3089,
+    "mobilenetv2": 0.2930,
+    "densenet121": 0.2898,
+    "efficientnetb0": 0.2516,
+    "efficientnetb0_classweight": 0.2325
+  },
+  "external_bangladesh_bbox": {
+    "efficientnetb0": 0.1809,
+    "mobilenetv2": 0.1295,
+    "efficientnetb0_classweight": 0.1267,
+    "densenet121": 0.1102,
+    "baseline_cnn": 0.0946
+  }
+}
