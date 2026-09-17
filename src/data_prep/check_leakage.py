@@ -11,6 +11,10 @@ test로 나뉘어 들어갈 수 있고, 그러면 내부 테스트 정확도가 
 (둘 다 PlantVillage 내부 분할이라 같은 원본 풀에서 나왔을 수 있음).
 
 이 스크립트는 보정하지 않고 진단만 한다 — 결과를 보고 재분할 여부를 결정한다.
+
+(진단 결과: 완전 동일 이미지가 소수 발견되어(test-train 3장, val-train 4장)
+split_plantvillage.py를 그룹 단위 분할로 개선함. 재학습 후 이 스크립트를 다시
+돌려 완전 동일 개수가 0이 되는지 확인한다.)
 """
 
 import sys
@@ -18,7 +22,6 @@ import time
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
 
 SRC_DIR = Path(__file__).resolve().parents[1]
 if str(SRC_DIR) not in sys.path:
@@ -27,21 +30,9 @@ if str(SRC_DIR) not in sys.path:
 from class_info import CLASS_NAMES  # noqa: E402
 from config import COMMON_RESULT_DIR, TEST_DIR, TRAIN_DIR, VAL_DIR  # noqa: E402
 from utils.io import iter_images, save_json  # noqa: E402
+from utils.phash import POPCOUNT_TABLE_256, dhash  # noqa: E402
 
-HASH_SIZE = 8  # 8x8 = 64비트
 NEAR_DUP_THRESHOLD = 5  # Hamming distance <= 5 이면 근접 중복으로 판정 (0=완전 동일)
-POPCOUNT_TABLE_256 = np.array([bin(i).count("1") for i in range(256)], dtype=np.uint16)
-
-
-def dhash(image_path: Path) -> np.uint64:
-    """difference hash: 인접 픽셀 밝기 비교 기반 64비트 지각적 해시."""
-    with Image.open(image_path) as img:
-        img = img.convert("L").resize((HASH_SIZE + 1, HASH_SIZE), Image.LANCZOS)
-        pixels = np.asarray(img, dtype=np.int16)
-
-    diff = pixels[:, 1:] > pixels[:, :-1]  # (HASH_SIZE, HASH_SIZE) bool
-    packed = np.packbits(diff.flatten())  # 8 bytes
-    return np.frombuffer(packed.tobytes(), dtype=">u8")[0]  # big-endian uint64
 
 
 def hash_all(root_dir: Path, label: str) -> tuple[list[np.uint64], list[str], list[str]]:

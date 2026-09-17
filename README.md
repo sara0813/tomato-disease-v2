@@ -104,8 +104,10 @@ V1 최고 기록(EfficientNetB0 86.21%)보다 세 모델 모두 높다. `tiny_cn
 | Corruption 변형셋 | 4단계 강건성 평가 전용 | test셋 × 6조건 × 3단계 = 49,212장 |
 
 품질 검증: 이미지 무결성(20,284장 전수, 콘텐츠 문제 0건) · 클래스 불균형 기록(보정 없이 자연 분포 사용,
-14.36배) · train/test leakage 검사(perceptual hash, 0.62~0.88% — 재분할 불필요로 판단) · PlantDoc은
-콘택트시트 수작업 검수로 잎 사진이 아닌 이미지(진단표/비교 콜라주/삽화) 35장을 걸러냄.
+14.36배) · train/test leakage 검사(perceptual hash, 근접중복 0.62~0.88%는 재분할 불필요 수준이었지만
+완전 동일 이미지가 소수 발견되어(test-train 3장, val-train 4장) 그룹 단위 분할로 코드를 개선함 —
+아래 [그룹 단위 분할](#그룹-단위-분할-leakage-방지) 참고 · PlantDoc은 콘택트시트 수작업 검수로
+잎 사진이 아닌 이미지(진단표/비교 콜라주/삽화) 35장을 걸러냄.
 
 ## 실험 로드맵
 
@@ -134,6 +136,34 @@ V1 최고 기록(EfficientNetB0 86.21%)보다 세 모델 모두 높다. `tiny_cn
 `config.model_path()`와 `*_result_dir()` 헬퍼가 seed별로 경로를 분리한다
 (`models/<model>/seed<seed>.pt`, `results/<단계>/<model>/seed<seed>/`)
 — 다른 seed로 다시 실행해도 기존 seed의 가중치·로그는 덮어쓰이지 않는다.
+
+**완료:** seed별 결과가 쌓이면 자동으로 집계하는 `src/summary/aggregate_seeds.py`를 미리 만들어뒀다.
+`config.SEEDS` 중 실제로 완료된 seed만 모아 모델별 평균 Accuracy · 표준편차 · 평균 Macro F1 ·
+최고/최저 성능을 계산해 `results/summary/seed_aggregate.{csv,md}`에 저장한다. 지금은 seed42 1개뿐이라
+표준편차는 N/A로 나오고(샘플 1개로는 계산 불가), seed 123/2026 학습이 끝난 뒤 다시 실행하면 채워진다.
+
+**향후 계획:** seed 123, 2026으로 tiny_cnn_a/b/c 재학습 + 4단계 평가 전체 재실행 (CPU 기준 seed당
+학습 약 5시간, corruption 평가가 가장 오래 걸림 — 1회성 작업으로 백그라운드 실행 예정).
+
+### 그룹 단위 분할 (leakage 방지)
+
+`check_leakage.py` 진단에서 PlantVillage train/test 사이에 perceptual hash(dHash)가 **완전히 동일한**
+이미지가 소수 발견됐다(test-train 3장, val-train 4장 — 근접 중복까지 포함하면 0.62~0.88%). 같은 사진이
+train과 test에 나뉘어 들어가면 내부 테스트 정확도가 "새 이미지를 맞히는 능력"이 아니라 "본 이미지의
+쌍둥이를 맞히는 능력"으로 부풀려질 수 있다.
+
+**완료:** `split_plantvillage.py`를 파일 단위 무작위 분할에서 **그룹 단위 분할**로 개선했다.
+1. `build_hash_groups()` — 클래스별로 dHash가 동일한 파일들을 그룹으로 묶는다 (중복 없으면 그룹 크기 1).
+2. `split_groups()` — 그룹을 섞은 뒤, 목표 비율(70/15/15) 대비 가장 덜 채워진 split에 그룹째로 배정한다.
+   같은 그룹은 항상 같은 split에만 들어가므로 완전 동일 이미지가 train/val/test로 나뉘는 일이 없어진다.
+   (그룹을 통째로 옮기다 보니 클래스별 실제 비율이 70/15/15에서 아주 약간 벗어날 수 있는데, 그 오차는
+   `results/_common/plantvillage_split_stats.json`에 클래스별로 기록된다.)
+3. 중복 dHash 계산 로직은 `check_leakage.py`와 함께 쓰도록 `src/utils/phash.py`로 공통화했다.
+
+**향후 계획:** 위 로직으로 `data/processed/plantvillage`를 재생성하는 건 아직 실행하지 않았다 — 지금
+바로 재생성하면 이미 학습된 seed42 가중치(구 split 기준)와 test 폴더(신 split)가 어긋나기 때문에,
+seed 123/2026 반복실험을 시작할 때 함께 재생성하고 3개 seed 전부 새 split으로 재학습할 예정이다.
+재학습 후 `check_leakage.py`를 다시 돌려 완전 동일 개수가 0이 되는지 확인한다.
 
 ## 폴더 구조
 
@@ -172,6 +202,7 @@ py -3.11 -m venv .venv
 .venv/Scripts/pip install -r requirements.txt
 
 # 데이터 준비 (원본은 건드리지 않고 새 폴더에 생성)
+# split_plantvillage.py는 dHash가 동일한 이미지를 그룹으로 묶어 같은 split에만 배정한다
 python src/data_prep/split_plantvillage.py
 python src/data_prep/prepare_taiwan.py
 python src/data_prep/prepare_bangladesh_bbox.py
@@ -197,6 +228,7 @@ python src/evaluate/evaluate_external.py
 
 # 종합 + 시각화
 python src/summary/make_summary.py
+python src/summary/aggregate_seeds.py   # 완료된 seed만 모아 평균·표준편차·최고/최저 집계
 python src/visualize/plot_results.py
 python src/visualize/plot_class_distribution.py
 
