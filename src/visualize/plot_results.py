@@ -460,6 +460,55 @@ def plot_external_generalization():
     plt.close(fig)
 
 
+DA_METHODS = ("source", "adabn", "tent")
+DA_METHOD_LABELS = {"source": "Source-only", "adabn": "AdaBN", "tent": "TENT"}
+DA_METHOD_SUFFIX = {"source": "", "adabn": "_adabn", "tent": "_tent"}
+
+
+def plot_domain_adaptation_comparison(base_run_name="tiny_cnn_c_res96_bicubic", datasets=EXTERNAL_DATASETS):
+    """최종 모델(base_run_name)에 대해 source-only vs AdaBN vs TENT 외부 정확도를 데이터셋별로 비교.
+    아직 안 돌린 조합은 빈 칸으로 남긴다."""
+    rows = []
+    for ds in datasets:
+        for method in DA_METHODS:
+            run_name = f"{base_run_name}{DA_METHOD_SUFFIX[method]}"
+            p = external_result_dir(ds, run_name) / "metrics.json"
+            if p.exists():
+                rows.append({"dataset": ds, "method": method, "accuracy": load_json(p)["accuracy"] * 100})
+
+    if not rows:
+        return
+
+    df = pd.DataFrame(rows).pivot(index="dataset", columns="method", values="accuracy").reindex(columns=DA_METHODS)
+    df = df.reindex(datasets)
+
+    fig, ax = plt.subplots(figsize=(12, 6.5))
+    x = np.arange(len(df))
+    width = 0.25
+    colors = {"source": "#898781", "adabn": "#2a78d6", "tent": "#eb6834"}
+
+    offset0 = -(len(DA_METHODS) - 1) / 2
+    for i, method in enumerate(DA_METHODS):
+        vals = df[method]
+        bars = ax.bar(x + (offset0 + i) * width, vals, width, label=DA_METHOD_LABELS[method], color=colors[method])
+        for b, v in zip(bars, vals):
+            if not pd.isna(v):
+                ax.text(b.get_x() + b.get_width() / 2, v + 0.5, f"{v:.1f}", ha="center", fontsize=12, fontweight="bold")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(df.index)
+    ax.set_ylabel("외부 Accuracy (%)", fontsize=16, fontweight="bold")
+    ax.set_title("Domain Adaptation 방법별 외부 정확도 비교")
+    ax.legend()
+    ax.tick_params(axis="both", labelsize=14)
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontweight("bold")
+    ax.grid(True, axis="y", alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "domain_adaptation_comparison.png", dpi=150)
+    plt.close(fig)
+
+
 def plot_confusion_matrices():
     for m in TINY_MODELS:
         cm = pd.read_csv(internal_result_dir(m) / "confusion_matrix.csv", index_col=0)
@@ -569,6 +618,7 @@ def main():
     plot_resolution_interp_matrix()
     plot_training_time_matrix()
     plot_external_interp_matrix()
+    plot_domain_adaptation_comparison()
     print(f"저장 완료: {FIGURE_DIR}")
 
 
