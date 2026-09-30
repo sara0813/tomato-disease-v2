@@ -18,6 +18,13 @@ models.build_model(name)으로 구조만 가져온 뒤, 여기서 optimizer/loss
 있다가 끝에 한 번에 저장하지 않음). 학습 도중 세션이 끊겨도 그 시점까지의
 best 가중치와 epoch별 로그가 남는다 (실제로 한 번 겪은 문제라 이렇게 바꿈).
 
+재개(resume): 위 best 가중치와 별도로, results/internal/<run>/seed<seed>/checkpoint.pt에
+매 epoch 끝날 때마다 model/optimizer 상태 + rng 상태 + epoch 번호를 저장한다.
+같은 run_name/seed로 다시 실행하면 이 파일이 있는 경우 자동으로 그 epoch
+다음부터 이어서 학습한다 (--no-resume으로 끄고 처음부터 새로 시작 가능).
+학습이 정상 종료(완료 또는 early stopping)되면 체크포인트 파일은 지운다
+(다음에 같은 run을 다시 돌릴 때 실수로 이어받지 않도록).
+
 V2에서는 config.TINY_MODELS(tiny_cnn_a/b/c) 3개만 학습 대상이다.
 나머지(baseline_cnn 등)는 1차 실험 결과를 인용하고 재학습하지 않는다
 (config.CITED_REFERENCE_MODELS 참고). 다만 이 스크립트 자체는 등록된 모델이면
@@ -31,10 +38,12 @@ V2에서는 config.TINY_MODELS(tiny_cnn_a/b/c) 3개만 학습 대상이다.
 
 import argparse
 import csv
+import random
 import sys
 import time
 from pathlib import Path
 
+import numpy as np
 import torch
 from torch import nn
 
@@ -52,8 +61,8 @@ from config import (  # noqa: E402
     internal_result_dir,
     model_path,
 )
-from dataset import make_dataloader  # noqa: E402
-from models import MODEL_BUILDERS, build_model, input_shape_for  # noqa: E402
+from dataset import INTERPOLATION_MODES, make_dataloader  # noqa: E402
+from models import MODEL_BUILDERS, input_shape_for  # noqa: E402
 from utils.io import save_json  # noqa: E402
 from utils.seed import set_seed  # noqa: E402
 
@@ -112,49 +121,98 @@ def train_model(
     lr: float = 1e-3,
     patience: int = EARLY_STOPPING_PATIENCE,
     seed: int = SEED,
+    img_size: tuple[int, int] | None = None,
+    interp: str = "bilinear",
+    resume: bool = True,
 ) -> dict:
-    set_seed(seed)
+    """img_size를 주면 해당 모델의 기본 입력 해상도 대신 이 (H,W)로 학습한다
+    (해상도 축소 효과 비교용, RQ3). interp을 bilinear가 아닌 값으로 주면 리사이즈
+    보간법을 바꿔 학습한다 (bicubic/lanczos/area). 이때 결과 경로는 원래 결과를
+    덮어쓰지 않도록 run_name에 _res{H}, _{interp} 접미사를 붙여 분리한다.
 
+    resume=True(기본)면 같은 run_name/seed의 checkpoint.pt가 있을 때 그 지점부터
+    이어서 학습한다. False면 있어도 무시하고 처음부터 새로 시작한다."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"[{model_name}] device={device}")
 
-    img_size = input_shape_for(model_name)[1:]  # (C,H,W) -> (H,W)
-    train_loader = make_dataloader(TRAIN_DIR, img_size, batch_size, shuffle=True)
-    val_loader = make_dataloader(VAL_DIR, img_size, batch_size, shuffle=False)
-    print(f"[{model_name}] train={len(train_loader.dataset)}  val={len(val_loader.dataset)}  img_size={img_size}")
+    if img_size is None:
+        img_size = input_shape_for(model_name)[1:]  # (C,H,W) -> (H,W)
+        run_name = model_name
+    else:
+        run_name = f"{model_name}_res{img_size[0]}"
+    if interp != "bilinear":
+        run_name = f"{run_name}_{interp}"
 
-    model = build_model(model_name).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    loss_fn = nn.CrossEntropyLoss()
+    print(f"[{run_name}] device={device}")
 
-    save_path = model_path(model_name, seed)
+    interpolation = INTERPOLATION_MODES[interp]
+    train_loader = make_dataloader(TRAIN_DIR, img_size, batch_size, shuffle=True, interpolation=interpolation)
+    val_loader = make_dataloader(VAL_DIR, img_size, batch_size, shuffle=False, interpolation=interpolation)
+    print(f"[{run_name}] train={len(train_loader.dataset)}  val={len(val_loader.dataset)}  img_size={img_size}")
+
+    save_path = model_path(run_name, seed)
     save_path.parent.mkdir(parents=True, exist_ok=True)
-    log_dir = internal_result_dir(model_name, seed)
+    log_dir = internal_result_dir(run_name, seed)
     log_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = log_dir / "checkpoint.pt"
 
+    start_epoch = 1
     best_val_loss = float("inf")
     best_val_acc = None
     best_epoch = -1
     patience_counter = 0
     history = []
+    elapsed_before = 0.0  # 이전 세션(들)에서 이미 흘려보낸 학습 시간 (재개 시 total_train_time에 합산)
+
+    if resume and checkpoint_path.exists():
+        # 이어받을 체크포인트가 있으면 seed를 다시 걸지 않는다 (저장해둔 rng 상태를 그대로 복원).
+        model = MODEL_BUILDERS[model_name](input_shape=(3, *img_size)).to(device)
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+        # weights_only=False: 우리가 직접 저장한 체크포인트이고, rng 상태 등 텐서가 아닌
+        # 객체도 담고 있어서 필요함 (PyTorch 2.6+ 기본값인 True로는 로드 안 됨).
+        ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+        model.load_state_dict(ckpt["model_state"])
+        optimizer.load_state_dict(ckpt["optimizer_state"])
+        best_val_loss = ckpt["best_val_loss"]
+        best_val_acc = ckpt["best_val_acc"]
+        best_epoch = ckpt["best_epoch"]
+        patience_counter = ckpt["patience_counter"]
+        history = ckpt["history"]
+        start_epoch = ckpt["epoch"] + 1
+        elapsed_before = ckpt["total_elapsed_sec"]
+        torch.set_rng_state(ckpt["torch_rng_state"])
+        np.random.set_state(ckpt["numpy_rng_state"])
+        random.setstate(ckpt["python_rng_state"])
+
+        print(
+            f"[{run_name}] 체크포인트에서 이어서 학습: epoch {start_epoch}부터 "
+            f"(best_epoch={best_epoch}, best_val_loss={best_val_loss:.4f}, "
+            f"지금까지 누적 학습시간={elapsed_before/60:.1f}분)"
+        )
+    else:
+        set_seed(seed)  # 새로 시작할 때만 초기 가중치/셔플 순서를 seed로 고정
+        model = MODEL_BUILDERS[model_name](input_shape=(3, *img_size)).to(device)
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+    loss_fn = nn.CrossEntropyLoss()
 
     run_start = time.time()
 
-    for epoch in range(1, epochs + 1):
+    for epoch in range(start_epoch, epochs + 1):
         epoch_start = time.time()
 
         train_loss, train_acc = run_epoch(
             model, train_loader, loss_fn, optimizer, device, train=True,
-            log_prefix=f"[{model_name}] epoch {epoch:2d}/{epochs} [train]",
+            log_prefix=f"[{run_name}] epoch {epoch:2d}/{epochs} [train]",
         )
         val_loss, val_acc = run_epoch(
             model, val_loader, loss_fn, optimizer, device, train=False,
-            log_prefix=f"[{model_name}] epoch {epoch:2d}/{epochs} [val]",
+            log_prefix=f"[{run_name}] epoch {epoch:2d}/{epochs} [val]",
         )
 
         epoch_time = time.time() - epoch_start
         print(
-            f"[{model_name}] epoch {epoch:2d}/{epochs}  "
+            f"[{run_name}] epoch {epoch:2d}/{epochs}  "
             f"train_loss={train_loss:.4f} train_acc={train_acc:.4f}  "
             f"val_loss={val_loss:.4f} val_acc={val_acc:.4f}  ({epoch_time:.1f}s)"
         )
@@ -184,13 +242,16 @@ def train_model(
         # 매 epoch마다 지금까지의 로그를 저장해서, 중간에 끊겨도 진행분이 남게 한다.
         partial_summary = {
             "model": model_name,
+            "run_name": run_name,
+            "img_size": list(img_size),
+            "interp": interp,
             "status": "running",
             "epochs_ran": len(history),
             "epochs_limit": epochs,
             "best_epoch": best_epoch,
             "best_val_loss": best_val_loss,
             "best_val_acc": best_val_acc,
-            "elapsed_sec": time.time() - run_start,
+            "elapsed_sec": elapsed_before + (time.time() - run_start),
             "batch_size": batch_size,
             "lr": lr,
             "patience": patience,
@@ -203,16 +264,38 @@ def train_model(
             writer.writeheader()
             writer.writerows(history)
 
+        # 재개용 체크포인트: 중간에 끊겨도 이 epoch 다음부터 이어서 학습할 수 있게 매 epoch 저장.
+        torch.save(
+            {
+                "epoch": epoch,
+                "model_state": model.state_dict(),
+                "optimizer_state": optimizer.state_dict(),
+                "best_val_loss": best_val_loss,
+                "best_val_acc": best_val_acc,
+                "best_epoch": best_epoch,
+                "patience_counter": patience_counter,
+                "history": history,
+                "total_elapsed_sec": elapsed_before + (time.time() - run_start),
+                "torch_rng_state": torch.get_rng_state(),
+                "numpy_rng_state": np.random.get_state(),
+                "python_rng_state": random.getstate(),
+            },
+            checkpoint_path,
+        )
+
         if not improved and patience_counter >= patience:
-            print(f"[{model_name}] early stopping (patience={patience}, best_epoch={best_epoch})")
+            print(f"[{run_name}] early stopping (patience={patience}, best_epoch={best_epoch})")
             break
 
-    total_time = time.time() - run_start
+    total_time = elapsed_before + (time.time() - run_start)
 
-    print(f"[{model_name}] best 가중치는 이미 저장돼 있음 (best_epoch={best_epoch}, val_loss={best_val_loss:.4f}): {save_path}")
+    print(f"[{run_name}] best 가중치는 이미 저장돼 있음 (best_epoch={best_epoch}, val_loss={best_val_loss:.4f}): {save_path}")
 
     summary = {
         "model": model_name,
+        "run_name": run_name,
+        "img_size": list(img_size),
+        "interp": interp,
         "status": "completed",
         "epochs_ran": len(history),
         "epochs_limit": epochs,
@@ -227,9 +310,10 @@ def train_model(
         "history": history,
     }
     save_json(summary, log_dir / "training_log.json")
+    checkpoint_path.unlink(missing_ok=True)  # 정상 종료했으니 재개용 체크포인트는 정리
 
-    print(f"[{model_name}] 학습 로그 저장: {log_dir}")
-    print(f"[{model_name}] 총 학습 시간: {total_time/60:.1f}분")
+    print(f"[{run_name}] 학습 로그 저장: {log_dir}")
+    print(f"[{run_name}] 총 학습 시간: {total_time/60:.1f}분")
 
     return summary
 
@@ -242,6 +326,18 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--patience", type=int, default=EARLY_STOPPING_PATIENCE)
     parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument(
+        "--img-size", type=int, default=None,
+        help="기본 해상도 대신 이 크기(정사각형)로 학습 (해상도 비교 실험용, RQ3)",
+    )
+    parser.add_argument(
+        "--interp", choices=list(INTERPOLATION_MODES.keys()), default="bilinear",
+        help="리사이즈 보간법 (기본 bilinear). bicubic/lanczos/area로 비교 실험 가능",
+    )
+    parser.add_argument(
+        "--no-resume", action="store_true",
+        help="같은 run의 checkpoint.pt가 있어도 무시하고 처음부터 새로 학습",
+    )
     args = parser.parse_args()
 
     train_model(
@@ -251,6 +347,9 @@ def main() -> None:
         lr=args.lr,
         patience=args.patience,
         seed=args.seed,
+        img_size=(args.img_size, args.img_size) if args.img_size else None,
+        interp=args.interp,
+        resume=not args.no_resume,
     )
 
 

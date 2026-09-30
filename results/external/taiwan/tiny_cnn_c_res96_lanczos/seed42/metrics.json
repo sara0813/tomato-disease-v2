@@ -1,0 +1,20 @@
+{
+  "model": "tiny_cnn_c",
+  "run_name": "tiny_cnn_c_res96_lanczos",
+  "img_size": [
+    96,
+    96
+  ],
+  "interp": "lanczos",
+  "dataset": "taiwan",
+  "n_total": 314,
+  "n_classes_present": 3,
+  "classes_present": [
+    "Tomato___Bacterial_spot",
+    "Tomato___Late_blight",
+    "Tomato___healthy"
+  ],
+  "accuracy": 0.267515923566879,
+  "macro_f1": 0.16470588235294117,
+  "weighted_f1": 0.1542150618209067
+}

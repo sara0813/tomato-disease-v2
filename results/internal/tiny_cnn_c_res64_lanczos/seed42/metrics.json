@@ -1,0 +1,13 @@
+{
+  "model": "tiny_cnn_c",
+  "run_name": "tiny_cnn_c_res64_lanczos",
+  "img_size": [
+    64,
+    64
+  ],
+  "interp": "lanczos",
+  "n_test": 2727,
+  "accuracy": 0.9640630729739641,
+  "macro_f1": 0.952714342461989,
+  "weighted_f1": 0.9636978238849536
+}

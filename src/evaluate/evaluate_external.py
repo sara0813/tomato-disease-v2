@@ -27,28 +27,31 @@ if str(SRC_DIR) not in sys.path:
 
 from class_info import CLASS_NAMES  # noqa: E402
 from config import EXTERNAL_DIRS, SEED, TINY_MODELS, external_result_dir, model_path  # noqa: E402
-from dataset import make_external_dataloader  # noqa: E402
+from dataset import INTERPOLATION_MODES, make_external_dataloader  # noqa: E402
 from evaluate.evaluate_internal import predict_all  # noqa: E402
-from models import build_model, input_shape_for  # noqa: E402
+from models import MODEL_BUILDERS, input_shape_for  # noqa: E402
 from utils.io import save_json  # noqa: E402
 
 ALL_LABEL_IDS = list(range(len(CLASS_NAMES)))
 
 
-def evaluate_on_external(
-    model_name: str, dataset_key: str, data_dir: Path, seed: int = SEED, batch_size: int = 32
+def evaluate_model_on_external(
+    model,
+    model_name: str,
+    run_name: str,
+    dataset_key: str,
+    data_dir: Path,
+    img_size: tuple[int, int],
+    interp: str,
+    seed: int,
+    device,
+    batch_size: int = 32,
 ) -> dict:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    weights_path = model_path(model_name, seed)
-    if not weights_path.exists():
-        raise FileNotFoundError(f"학습된 가중치가 없습니다: {weights_path}")
-
-    img_size = input_shape_for(model_name)[1:]
-    loader = make_external_dataloader(data_dir, img_size, batch_size)
-
-    model = build_model(model_name).to(device)
-    model.load_state_dict(torch.load(weights_path, map_location=device))
+    """이미 준비된 model(가중치 로드/도메인 적응 등 끝난 상태)을 외부 데이터로 평가하고 저장한다.
+    run_name이 결과 저장 경로(results/external/<dataset>/<run_name>/seed<seed>/)를 결정하므로,
+    domain adaptation처럼 같은 base 가중치에서 파생된 여러 변형을 구분할 때 run_name에 접미사를
+    붙여서 호출한다 (예: "tiny_cnn_c_res96_bicubic_adabn")."""
+    loader = make_external_dataloader(data_dir, img_size, batch_size, interpolation=INTERPOLATION_MODES[interp])
 
     preds, labels = predict_all(model, loader, device)
 
@@ -75,11 +78,14 @@ def evaluate_on_external(
         }
     ).sort_values("predicted_count", ascending=False)
 
-    out_dir = external_result_dir(dataset_key, model_name, seed)
+    out_dir = external_result_dir(dataset_key, run_name, seed)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     metrics = {
         "model": model_name,
+        "run_name": run_name,
+        "img_size": list(img_size),
+        "interp": interp,
         "dataset": dataset_key,
         "n_total": len(labels),
         "n_classes_present": len(present_ids),
@@ -96,25 +102,75 @@ def evaluate_on_external(
     pred_dist.to_csv(out_dir / "prediction_distribution.csv", index=False, encoding="utf-8-sig")
 
     print(
-        f"[{model_name}] {dataset_key:16s} n={len(labels):5d}  "
+        f"[{run_name}] {dataset_key:16s} n={len(labels):5d}  "
         f"acc={acc:.4f}  macro_f1={macro_f1:.4f}  ({len(present_ids)}개 클래스 존재)"
     )
     return metrics
 
 
+def evaluate_on_external(
+    model_name: str,
+    dataset_key: str,
+    data_dir: Path,
+    seed: int = SEED,
+    batch_size: int = 32,
+    img_size: tuple[int, int] | None = None,
+    interp: str = "bilinear",
+) -> dict:
+    """img_size/interp를 주면 train_model.py --img-size/--interp로 학습한 run을 평가한다
+    (해상도·보간법 비교 실험용, RQ3). source-only(가중치 그대로) 평가 전용 — domain adaptation처럼
+    가중치를 먼저 손본 모델을 평가하려면 evaluate_model_on_external()을 직접 쓴다."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    if img_size is None:
+        img_size = input_shape_for(model_name)[1:]
+        run_name = model_name
+    else:
+        run_name = f"{model_name}_res{img_size[0]}"
+    if interp != "bilinear":
+        run_name = f"{run_name}_{interp}"
+
+    weights_path = model_path(run_name, seed)
+    if not weights_path.exists():
+        raise FileNotFoundError(f"학습된 가중치가 없습니다: {weights_path}")
+
+    model = MODEL_BUILDERS[model_name](input_shape=(3, *img_size)).to(device)
+    model.load_state_dict(torch.load(weights_path, map_location=device))
+
+    return evaluate_model_on_external(
+        model, model_name, run_name, dataset_key, data_dir, img_size, interp, seed, device, batch_size
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="5단계: 외부 데이터 일반화 평가")
+    parser.add_argument("--model", choices=TINY_MODELS, default=None, help="지정하면 이 모델만 평가 (기본: tiny_cnn 3종 전체)")
     parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument(
+        "--img-size", type=int, default=None,
+        help="train_model.py --img-size로 학습한 run을 평가 (해상도 비교 실험용, RQ3)",
+    )
+    parser.add_argument(
+        "--interp", choices=list(INTERPOLATION_MODES.keys()), default="bilinear",
+        help="train_model.py --interp로 학습한 run을 평가",
+    )
     args = parser.parse_args()
+
+    img_size = (args.img_size, args.img_size) if args.img_size else None
+    model_names = [args.model] if args.model else TINY_MODELS
 
     all_results = []
     for dataset_key, data_dir in EXTERNAL_DIRS.items():
-        for model_name in TINY_MODELS:
-            all_results.append(evaluate_on_external(model_name, dataset_key, data_dir, seed=args.seed))
+        for model_name in model_names:
+            all_results.append(
+                evaluate_on_external(
+                    model_name, dataset_key, data_dir, seed=args.seed, img_size=img_size, interp=args.interp
+                )
+            )
 
     print("\n=== 요약 ===")
     for r in all_results:
-        print(f"{r['dataset']:16s} {r['model']:12s} acc={r['accuracy']:.4f}  macro_f1={r['macro_f1']:.4f}")
+        print(f"{r['dataset']:16s} {r['run_name']:20s} acc={r['accuracy']:.4f}  macro_f1={r['macro_f1']:.4f}")
 
 
 if __name__ == "__main__":

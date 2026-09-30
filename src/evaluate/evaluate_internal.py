@@ -23,8 +23,8 @@ if str(SRC_DIR) not in sys.path:
 
 from class_info import CLASS_NAMES  # noqa: E402
 from config import SEED, TEST_DIR, TINY_MODELS, internal_result_dir, model_path  # noqa: E402
-from dataset import make_dataloader  # noqa: E402
-from models import build_model, input_shape_for  # noqa: E402
+from dataset import INTERPOLATION_MODES, make_dataloader  # noqa: E402
+from models import MODEL_BUILDERS, input_shape_for  # noqa: E402
 from utils.io import save_json  # noqa: E402
 
 
@@ -41,17 +41,32 @@ def predict_all(model, loader, device) -> tuple[list[int], list[int]]:
     return all_preds, all_labels
 
 
-def evaluate_model(model_name: str, seed: int = SEED, batch_size: int = 32) -> dict:
+def evaluate_model(
+    model_name: str,
+    seed: int = SEED,
+    batch_size: int = 32,
+    img_size: tuple[int, int] | None = None,
+    interp: str = "bilinear",
+) -> dict:
+    """img_size/interp를 주면 train_model.py --img-size/--interp로 학습한 run을 평가한다
+    (해상도·보간법 비교 실험용, RQ3)."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    weights_path = model_path(model_name, seed)
+    if img_size is None:
+        img_size = input_shape_for(model_name)[1:]
+        run_name = model_name
+    else:
+        run_name = f"{model_name}_res{img_size[0]}"
+    if interp != "bilinear":
+        run_name = f"{run_name}_{interp}"
+
+    weights_path = model_path(run_name, seed)
     if not weights_path.exists():
         raise FileNotFoundError(f"학습된 가중치가 없습니다: {weights_path} (먼저 train_model.py 실행)")
 
-    img_size = input_shape_for(model_name)[1:]
-    loader = make_dataloader(TEST_DIR, img_size, batch_size, shuffle=False)
+    loader = make_dataloader(TEST_DIR, img_size, batch_size, shuffle=False, interpolation=INTERPOLATION_MODES[interp])
 
-    model = build_model(model_name).to(device)
+    model = MODEL_BUILDERS[model_name](input_shape=(3, *img_size)).to(device)
     model.load_state_dict(torch.load(weights_path, map_location=device))
 
     preds, labels = predict_all(model, loader, device)
@@ -66,11 +81,14 @@ def evaluate_model(model_name: str, seed: int = SEED, batch_size: int = 32) -> d
     )
     cm = confusion_matrix(labels, preds, labels=list(range(len(CLASS_NAMES))))
 
-    out_dir = internal_result_dir(model_name, seed)
+    out_dir = internal_result_dir(run_name, seed)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     metrics = {
         "model": model_name,
+        "run_name": run_name,
+        "img_size": list(img_size),
+        "interp": interp,
         "n_test": len(labels),
         "accuracy": acc,
         "macro_f1": macro_f1,
@@ -84,7 +102,7 @@ def evaluate_model(model_name: str, seed: int = SEED, batch_size: int = 32) -> d
     )
 
     print(
-        f"[{model_name}] n_test={len(labels)}  accuracy={acc:.4f}  "
+        f"[{run_name}] n_test={len(labels)}  accuracy={acc:.4f}  "
         f"macro_f1={macro_f1:.4f}  weighted_f1={weighted_f1:.4f}"
     )
     return metrics
@@ -92,14 +110,25 @@ def evaluate_model(model_name: str, seed: int = SEED, batch_size: int = 32) -> d
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="2단계: 내부 성능 평가")
+    parser.add_argument("--model", choices=TINY_MODELS, default=None, help="지정하면 이 모델만 평가 (기본: tiny_cnn 3종 전체)")
     parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument(
+        "--img-size", type=int, default=None,
+        help="train_model.py --img-size로 학습한 run을 평가 (해상도 비교 실험용, RQ3)",
+    )
+    parser.add_argument(
+        "--interp", choices=list(INTERPOLATION_MODES.keys()), default="bilinear",
+        help="train_model.py --interp로 학습한 run을 평가",
+    )
     args = parser.parse_args()
 
-    results = [evaluate_model(name, seed=args.seed) for name in TINY_MODELS]
+    img_size = (args.img_size, args.img_size) if args.img_size else None
+    model_names = [args.model] if args.model else TINY_MODELS
+    results = [evaluate_model(name, seed=args.seed, img_size=img_size, interp=args.interp) for name in model_names]
 
     print("\n=== 요약 ===")
     for r in results:
-        print(f"{r['model']:12s} acc={r['accuracy']:.4f}  macro_f1={r['macro_f1']:.4f}  weighted_f1={r['weighted_f1']:.4f}")
+        print(f"{r['run_name']:20s} acc={r['accuracy']:.4f}  macro_f1={r['macro_f1']:.4f}  weighted_f1={r['weighted_f1']:.4f}")
 
 
 if __name__ == "__main__":

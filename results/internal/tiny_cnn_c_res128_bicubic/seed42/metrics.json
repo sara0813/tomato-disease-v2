@@ -1,0 +1,13 @@
+{
+  "model": "tiny_cnn_c",
+  "run_name": "tiny_cnn_c_res128_bicubic",
+  "img_size": [
+    128,
+    128
+  ],
+  "interp": "bicubic",
+  "n_test": 2727,
+  "accuracy": 0.9666299963329666,
+  "macro_f1": 0.9587105627084431,
+  "weighted_f1": 0.9663277108319275
+}

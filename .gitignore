@@ -31,5 +31,8 @@ Thumbs.db
 .vscode/
 .idea/
 
+# ===== Claude Code 개인 설정 =====
+.claude/settings.local.json
+
 # ===== Office 임시 잠금 파일 =====
 ~$*

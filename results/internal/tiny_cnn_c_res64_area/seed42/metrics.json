@@ -1,0 +1,13 @@
+{
+  "model": "tiny_cnn_c",
+  "run_name": "tiny_cnn_c_res64_area",
+  "img_size": [
+    64,
+    64
+  ],
+  "interp": "area",
+  "n_test": 2727,
+  "accuracy": 0.9629629629629629,
+  "macro_f1": 0.9511303922899789,
+  "weighted_f1": 0.962681082350539
+}
