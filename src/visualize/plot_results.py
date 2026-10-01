@@ -531,6 +531,57 @@ def plot_domain_adaptation_comparison(base_run_name="tiny_cnn_c_res96_bicubic", 
     plt.close(fig)
 
 
+def plot_negative_transfer_evidence(base_run_name="tiny_cnn_c_res96_bicubic", datasets=EXTERNAL_DATASETS):
+    """RESULT 7 (1/3) 슬라이드의 "AdaBN/TENT 적용 후 예측이 target에 없는 클래스로 쏠렸다"는
+    주장의 근거 그림. prediction_distribution.csv의 present_in_ground_truth=False 행들의
+    predicted_pct 합 = "target에 없는 클래스로 예측된 비율" 을 Source-only/AdaBN/TENT(마스킹 없는
+    원본 버전)끼리 비교한다. 이 비율이 AdaBN/TENT에서 급등하는 게 negative transfer의 직접 증거다."""
+    run_suffix = {"source": "", "adabn": "_adabn", "tent": "_tent"}
+    labels = {"source": "Source-only", "adabn": "AdaBN", "tent": "TENT"}
+    colors = {"source": "#898781", "adabn": "#2a78d6", "tent": "#eb6834"}
+
+    rows = []
+    for ds in datasets:
+        for method, suffix in run_suffix.items():
+            p = external_result_dir(ds, f"{base_run_name}{suffix}") / "prediction_distribution.csv"
+            if not p.exists():
+                continue
+            dist = pd.read_csv(p, encoding="utf-8-sig")
+            absent_pct = dist.loc[~dist["present_in_ground_truth"], "predicted_pct"].sum()
+            rows.append({"dataset": ds, "method": method, "absent_pct": absent_pct})
+
+    if not rows:
+        return
+
+    df = pd.DataFrame(rows).pivot(index="dataset", columns="method", values="absent_pct")
+    df = df.reindex(index=datasets, columns=list(run_suffix.keys()))
+
+    fig, ax = plt.subplots(figsize=(12, 6.5))
+    x = np.arange(len(df))
+    width = 0.25
+    offset0 = -(len(run_suffix) - 1) / 2
+    for i, method in enumerate(run_suffix):
+        vals = df[method]
+        bars = ax.bar(x + (offset0 + i) * width, vals, width, label=labels[method], color=colors[method])
+        for b, v in zip(bars, vals):
+            if not pd.isna(v):
+                ax.text(b.get_x() + b.get_width() / 2, v + 1, f"{v:.1f}%", ha="center", fontsize=12, fontweight="bold")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(df.index)
+    ax.set_ylabel("target에 없는 클래스로 예측된 비율 (%)", fontsize=15, fontweight="bold")
+    ax.set_title("Negative Transfer 증거: AdaBN/TENT 적용 후 '없는 클래스' 예측 쏠림", fontsize=16, fontweight="bold")
+    ax.legend(fontsize=13)
+    ax.tick_params(axis="both", labelsize=14)
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontweight("bold")
+    ax.set_ylim(0, 105)
+    ax.grid(True, axis="y", alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "negative_transfer_evidence.png", dpi=150)
+    plt.close(fig)
+
+
 def plot_confusion_matrices():
     for m in TINY_MODELS:
         cm = pd.read_csv(internal_result_dir(m) / "confusion_matrix.csv", index_col=0)
@@ -641,6 +692,7 @@ def main():
     plot_training_time_matrix()
     plot_external_interp_matrix()
     plot_domain_adaptation_comparison()
+    plot_negative_transfer_evidence()
     print(f"저장 완료: {FIGURE_DIR}")
 
 

@@ -18,10 +18,10 @@
 | 5.6 | 해상도 × 리사이즈 보간법 튜닝 (tiny_cnn_c) | ✅ 완료 |
 | 6 | 최종 모델 선정 | ✅ 완료 — **tiny_cnn_c, 96px, bicubic 리사이즈** |
 | 7 | 웹 시스템 적용 | ✅ 프로토타입 완료 (`app/streamlit_app.py`, 모델 선택형) |
-| 8 | Domain Adaptation (AdaBN/TENT) | 🔄 1차 완료 — 둘 다 source-only보다 악화, negative transfer 확인 (아래 참고) |
+| 8 | Domain Adaptation (AdaBN/TENT/SHOT) | ✅ 완료 (seed42 단일) — 마스킹+SHOT 조합이 최종 권장안 (아래 참고) |
 
 진행 과정과 판단 근거를 상세히 정리한 슬라이드: `docs/CNN_토마토_병해분류_V2_진행보고.pptx`
-(2026-10-01 기준 26장 — 최종 모델 선정·seed 재현성·Domain Adaptation 결과 반영)
+(2026-10-02 기준 28장 — 최종 모델 선정·seed 재현성·Domain Adaptation 최종 결과 반영)
 
 ## 연구 질문
 
@@ -147,30 +147,73 @@ seed42를 그룹 단위 분할(위 [그룹 단위 분할](#그룹-단위-분할-
 자체의 효과가 아니라 재학습에 따른 원래 랜덤 변동 범위로 해석하는 게 맞다. 구 결과(`seed42_predup/`)는
 비교 근거로 당분간 남겨두고, 확인이 끝나면 삭제할 예정이다.
 
-## Domain Adaptation (AdaBN / TENT) — 1차 실험
+## Domain Adaptation (AdaBN / TENT / SHOT) — 최종 정리
 
 외부 일반화(RQ4)가 여전히 낮은 문제를 완화하기 위해, 최종 모델(tiny_cnn_c, 96px, bicubic)에
-source-free·target-label 미사용 조건으로 AdaBN과 TENT를 적용해봤다. 자세한 실험 설계와 교수님
-확인이 필요한 가정은 `docs/토마토_병해분류_Domain_Adaptation_실행계획_v2.md` 참고, 코드는
-`src/adapt/domain_adaptation.py`.
+source-free·target-label 미사용 조건으로 AdaBN·TENT·SHOT을 순서대로 적용해봤다. 자세한 실험 설계와
+교수님 확인이 필요한 가정은 `docs/토마토_병해분류_Domain_Adaptation_실행계획_v2.md` 참고, 코드는
+`src/adapt/domain_adaptation.py`. **아래 결과는 전부 seed42 단일 실행 기준이다 — 3-seed 재현성 검증은
+아직 못 했고 향후 과제로 남겨둔다.**
+
+### 1차 시도: AdaBN·TENT (마스킹 없이) → negative transfer
 
 | 데이터셋 | 클래스 겹침 | Source-only | AdaBN | TENT |
 |---|---|---|---|---|
-| Taiwan | 3/10 | 27.39% | 7.64% | 7.64% |
-| Bangladesh | 6/10 | 21.80% | 10.17% | 9.17% |
-| PlantDoc | 8/10 | 19.89% | 13.12% | 11.00% |
+| Taiwan | 3/10 | 27.39% | 7.64% | 8.28% |
+| Bangladesh | 6/10 | 21.80% | 10.17% | 8.63% |
+| PlantDoc | 8/10 | 19.89% | 13.12% | 11.14% |
 
 **둘 다 기대와 반대로 source-only보다 성능이 떨어졌다.** 예측 분포를 분석해보니 원인은 명확하다 —
 AdaBN/TENT 모두 PlantVillage 10개 클래스 전체 기준으로 BN 통계/예측을 재조정하는데, 외부 데이터는
 일부 클래스만 존재해서(partial label-space) 존재하지 않는 클래스 쪽으로 예측이 쏠리는
-**negative transfer**가 발생했다. 게다가 **클래스 겹침이 적을수록 저하 폭이 더 크다**(Taiwan 72%
-상대적 하락 > Bangladesh 53~58% > PlantDoc 34~45%) — 설계 문서가 PADA 논문을 인용해 이론적으로
-경고했던 partial-domain-adaptation 문제가 실측으로 정확히 재현된 것이다. 구현 정확성은 BN 통계/파라미터
-변화량을 직접 검증해 확인했다(AdaBN은 conv weight 불변·BN 통계만 변화, TENT는 conv weight 불변·BN
-affine만 변화).
+**negative transfer**가 발생했다(근거: `results/figures/negative_transfer_evidence.png` — "target에
+없는 클래스로 예측된 비율"이 AdaBN/TENT 적용 후 Taiwan 기준 21.7%→83.1%/78.0%로 급등). 게다가
+**클래스 겹침이 적을수록 저하 폭이 더 크다**(Taiwan > Bangladesh > PlantDoc) — 설계 문서가 PADA
+논문을 인용해 이론적으로 경고했던 partial-domain-adaptation 문제가 실측으로 정확히 재현된 것이다.
+구현 정확성은 BN 통계/파라미터 변화량을 직접 검증해 확인했다(AdaBN은 conv weight 불변·BN 통계만
+변화, TENT는 conv weight 불변·BN affine만 변화).
 
-**다음 단계 후보:** partial-set을 고려하는 SHOT(pseudo-labeling + information maximization) 또는
-PADA 스타일의 클래스 가중치 적용 — 현재는 미착수.
+### 해결책: Class-restriction 마스킹
+
+`class_info.py`에 설계 단계부터 있던 클래스 매핑표(target ground truth가 아니라 어떤 클래스가
+존재할 수 있는지에 대한 사전 정보)로, target에 없는 클래스의 로짓에 `-inf`를 더해 예측 후보에서
+제외한다(추가 학습 없음, zero-cost). 모든 데이터셋에서 마스킹 단독만으로도 source-only보다 개선됐다.
+
+| 데이터셋 | Source-only | +마스킹만 | AdaBN+마스킹 | TENT+마스킹(mask-aware) |
+|---|---|---|---|---|
+| Taiwan | 27.39% | 32.48% | **38.85%** | 29.94% |
+| Bangladesh | 21.80% | **22.34%** | 15.71% | 13.71% |
+| PlantDoc | 19.89% | **20.31%** | 14.81% | 12.83% |
+
+TENT는 entropy를 마스킹된 클래스 안에서만 최소화하도록 고쳐도(mask-aware) 처음엔 "한 클래스로만
+100% 확신" 하는 degenerate solution으로 collapse했다(`prediction_distribution.csv`로 확인) — batch
+다양성을 최대화하는 정규화 항(SHOT의 information-maximization 축소판)을 추가해 collapse는 고쳤지만,
+그래도 마스킹만 한 것보다 전부 나빠서 최종안에서는 제외했다. AdaBN을 momentum 블렌딩(0.05~0.3)으로
+완전 교체 대신 약하게 섞어도 Bangladesh·PlantDoc은 마스킹-only를 넘지 못했다 — BN 통계를 조금이라도
+건드리는 것 자체가 해로웠다는 뜻이다. Taiwan만 완전 교체(AdaBN)가 확실히 더 좋았다.
+
+### 최종 승자: SHOT (pseudo-labeling + information maximization)
+
+Liang et al., *Do We Really Need to Access the Source Data? Source Hypothesis Transfer for
+Unsupervised Domain Adaptation*, ICML 2020. source classifier(`head.fc`)는 고정하고 feature
+extractor(`features`)만 미세조정한다 — 처음엔 분류기 softmax를 가중치 삼은 weighted k-means로
+클래스별 중심을 구해 pseudo-label을 할당(마스킹된 클래스 안에서만), 그 다음 pseudo-label
+cross-entropy + information-maximization(entropy 최소화 + batch 다양성 최대화) loss로 학습한다.
+
+| 데이터셋 | Source+마스킹 | AdaBN+마스킹 | TENT+마스킹 | **SHOT+마스킹** |
+|---|---|---|---|---|
+| Taiwan | 32.48% | **38.85%** | 29.94% | 38.54% |
+| Bangladesh | 22.34% | 15.71% | 13.71% | **27.97%** |
+| PlantDoc | **20.31%** | 14.81% | 12.83% | 18.05% (macro F1 **0.173**, 전체 1위) |
+
+AdaBN/TENT와 달리 **SHOT은 3개 데이터셋 전부에서 collapse 없이 안정적으로 잘 됐다** — Taiwan은
+AdaBN과 거의 동률, Bangladesh는 전체 방법 통틀어 최고, PlantDoc은 정확도는 비슷해도 macro F1이
+가장 높다. 데이터셋마다 다른 방법을 골라야 했던 AdaBN/TENT와 달리 튜닝 없이 두루 통하는 유일한
+방법이라, **class-restriction 마스킹은 항상 적용 + 적응 방법은 SHOT을 기본으로 사용**하는 것을
+최종 권장 파이프라인으로 정했다.
+
+**남은 과제:** 지금은 seed42 단일 실행 결과다. `tiny_cnn_c`를 96px·bicubic 기준으로 seed123/2026에서
+추가 학습한 뒤 이 비교 전체를 3-seed로 재검증할 계획이다(seed123 학습은 진행 중).
 
 ## 데이터셋
 
@@ -199,7 +242,7 @@ PADA 스타일의 클래스 가중치 적용 — 현재는 미착수.
 | 5 | 외부 데이터 평가 | `src/evaluate/evaluate_external.py` | `results/external/` |
 | 6 | 최종 모델 선정 — tiny_cnn_c/96px/bicubic | `src/train/train_model.py --img-size --interp` | `results/figures/*_interp_matrix_tiny_cnn_c.png` |
 | 7 | 시스템 적용 | `app/streamlit_app.py` | 웹 프로토타입 (모델 선택형) |
-| 8 | Domain Adaptation (AdaBN/TENT, 1차) | `src/adapt/domain_adaptation.py` | `results/external/*/*_adabn/`, `*_tent/` |
+| 8 | Domain Adaptation (AdaBN/TENT/SHOT) | `src/adapt/domain_adaptation.py` | `results/external/*/*_adabn*/`, `*_tent*/`, `*_shot_masked/` |
 
 **Corruption은 학습 증강이 아니라 평가용 변형이다.** 밝기 · 그림자 · 반사 · 블러 · 노이즈 · 가림
 6개 조건 × 약/중/강 3단계로 **테스트 이미지만** 변형해 모델별 성능 저하율을 비교한다. 학습 데이터에는
@@ -268,7 +311,7 @@ tomato_V2/
 │   ├── corruption/       # 변형 정의(6조건×3단계) · 변형셋 생성
 │   ├── train/            # train_model.py — 모델 이름 인자 하나로 통일, --img-size/--interp 튜닝, 체크포인트 재개
 │   ├── evaluate/         # 내부 · 효율 · corruption · 외부 평가
-│   ├── adapt/            # domain_adaptation.py — AdaBN/TENT (source-free, target label 미사용)
+│   ├── adapt/            # domain_adaptation.py — AdaBN/TENT/SHOT + class-restriction 마스킹 (source-free, target label 미사용)
 │   ├── summary/          # 종합 비교표 (V2 실측 + V1 인용, 판단 없음)
 │   ├── visualize/        # 결과 그래프 (results/figures/*.png)
 │   └── utils/            # 시드 · 입출력
@@ -318,8 +361,10 @@ python src/evaluate/measure_efficiency.py
 python src/evaluate/evaluate_corruption.py
 python src/evaluate/evaluate_external.py
 
-# Domain Adaptation (AdaBN/TENT) — 최종 모델에 적용, target label 미사용
-python src/adapt/domain_adaptation.py --model tiny_cnn_c --img-size 96 --interp bicubic --dataset bangladesh_bbox --method all
+# Domain Adaptation (AdaBN/TENT/SHOT) — 최종 모델에 적용, target label 미사용
+python src/adapt/domain_adaptation.py --model tiny_cnn_c --img-size 96 --interp bicubic --dataset all --method all --masked
+# SHOT만 (마스킹이 방법 자체에 내장돼 있어 --masked 없어도 항상 적용됨)
+python src/adapt/domain_adaptation.py --model tiny_cnn_c --img-size 96 --interp bicubic --dataset all --method shot
 
 # 종합 + 시각화
 python src/summary/make_summary.py

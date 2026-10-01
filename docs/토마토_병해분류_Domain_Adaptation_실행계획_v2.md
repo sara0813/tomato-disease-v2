@@ -65,11 +65,12 @@ Taiwan/PlantDoc은 Bangladesh용으로 만든 코드를 그대로 재사용해 �
 | 방법 | 핵심 아이디어 | Target label | Target 이미지로 파라미터 업데이트 | 이번 1차 범위 |
 |---|---|---|---|---|
 | Source-only | 적용 없음 (기준) | 사용 안 함 | 안 함 | ✅ 완료 |
-| AdaBN | BN running mean/var를 target 통계로 교체 | 사용 안 함 | 안 함 (통계만 교체) | ✅ 진행 |
-| TENT | Entropy 최소화로 BN affine(γ,β)만 업데이트 | 사용 안 함 | 함 | ✅ 진행 (가정 하에) |
-| SHOT | Feature extractor 전체 + pseudo-labeling | 사용 안 함 | 함 (훨씬 큰 폭) | ⏸ 보류 (스트레치 목표) |
+| AdaBN | BN running mean/var를 target 통계로 교체 | 사용 안 함 | 안 함 (통계만 교체) | ✅ 완료 |
+| TENT | Entropy 최소화로 BN affine(γ,β)만 업데이트 | 사용 안 함 | 함 | ✅ 완료 (마스킹 없이는 negative transfer, mask-aware+diversity 정규화로도 마스킹-only를 못 넘어 최종안 제외) |
+| Class-restriction 마스킹 | target에 없는 클래스 로짓을 -inf 처리 (추가 학습 없음) | 사용 안 함(설계 단계의 클래스 매핑표만 사용) | 안 함 | ✅ 완료 — negative transfer 해결책, 항상 적용 권장 |
+| SHOT | Feature extractor 전체 + pseudo-labeling(마스킹된 라벨 공간 내) | 사용 안 함 | 함 (훨씬 큰 폭) | ✅ 완료 — 3개 데이터셋 전부에서 collapse 없이 최고 성능, **최종 권장 방법** |
 
-SHOT을 이번에 보류하는 이유: 구현 난이도가 AdaBN/TENT보다 훨씬 높고(pseudo-labeling + information maximization loss 직접 구현 필요), Bangladesh의 최소 클래스가 47장뿐이라 클러스터링 기반 pseudo-label이 불안정해질 위험이 있다. AdaBN/TENT 결과를 먼저 보고, 개선 폭이 충분치 않을 때만 스트레치로 시도한다.
+당초 "Bangladesh 최소 클래스 47장이라 클러스터링이 불안정할 것"이라 보류했던 SHOT을 실제로 돌려보니, pseudo-labeling을 마스킹된(이미 존재가 알려진) 클래스로만 제한하니 우려와 달리 안정적으로 동작했다 — Bangladesh에서 전체 방법 중 최고 성능(27.97%)을 냈다.
 
 ### 4-1. AdaBN 구현 방식
 1. `tiny_cnn_c_res96_bicubic`의 학습된 가중치를 불러온다.
@@ -84,33 +85,38 @@ SHOT을 이번에 보류하는 이유: 구현 난이도가 AdaBN/TENT보다 훨�
 4. 평가는 AdaBN과 동일한 지표로.
 5. Reference: Wang et al., *Tent: Fully Test-Time Adaptation by Entropy Minimization*, ICLR 2021. 공식 코드: `DequanWang/tent` (GitHub) — 구조 참고용으로 확인.
 
-## 5. 비교 및 방법 선정 (3단계)
+## 5. 비교 및 방법 선정 (3단계) — 완료
 
-| Method | Accuracy | Macro F1 | Class-wise F1 (최저/최고) | 추가 연산 시간 | 비고 |
-|---|---|---|---|---|---|
-| Source-only | 21.80% | (측정 완료) | | 기준 | 이미 완료 |
-| AdaBN | | | | 매우 낮음 (forward만) | |
-| TENT | | | | 낮음 (BN param만 학습) | |
+3개 외부 데이터셋(Taiwan/Bangladesh/PlantDoc) 전체에 대해 측정했다 (seed42 단일 실행 기준, 3-seed 재현성 검증은 향후 과제).
 
-이 표를 다 채운 뒤, **정확도 개선 폭 대비 추가 비용**이 가장 효율적인 방법을 4단계(튜닝) 대상으로 선정한다. AdaBN이 이미 충분한 개선을 보이면 TENT까지 안 가도 스토리가 완성된다 — 원본 PDF의 취지("실패도 다음 근거가 된다")를 그대로 유지.
+| Method | Taiwan | Bangladesh | PlantDoc | 추가 연산 시간 |
+|---|---|---|---|---|
+| Source-only | 27.39% | 21.80% | 19.89% | 기준 |
+| Source+마스킹 | 32.48% | 22.34% | 20.31% | 거의 없음 (로짓 마스킹만) |
+| AdaBN(완전교체)+마스킹 | **38.85%** | 15.71% | 14.81% | 매우 낮음 (forward만) |
+| TENT+마스킹(mask-aware, 수정판) | 29.94% | 13.71% | 12.83% | 낮음 (BN param만 학습) |
+| **SHOT+마스킹** | 38.54% | **27.97%** | 18.05% (macro F1 **0.173**, 전체 1위) | 중간 (feature extractor 전체 미세조정) |
 
-## 6. 선정 방법 튜닝 및 확장 (4단계)
+**선정 결과: 마스킹은 항상 적용 + 적응 방법은 SHOT을 기본으로 사용.** AdaBN/TENT는 데이터셋마다(클래스 수·불균형 정도에 따라) 결과가 뒤집혀 범용적으로 추천하기 어려운 반면, SHOT은 튜닝 없이 3개 데이터셋 전부에서 collapse 없이 안정적으로 최고 또는 최고에 가까운 성능을 냈다 — 원본 PDF의 취지("실패도 다음 근거가 된다")대로 AdaBN/TENT의 실패 원인(negative transfer, BN 통계 교체의 부작용, entropy 최소화의 collapse)을 각각 진단한 뒤 SHOT으로 귀결시켰다.
 
-1. 3단계에서 고른 방법의 hyperparameter를 조정한다 (TENT라면 step 수/learning rate, AdaBN이라면 momentum 등).
-2. Bangladesh에서 검증된 코드를 **Taiwan, PlantDoc에 그대로 재실행**한다 (같은 함수에 dataset만 바꿔서 호출 — 별도 구현 불필요하게 설계).
-3. 3개 데이터셋 전체에 대한 최종 비교표와 그래프를 만든다 (해상도×보간법 히트맵과 같은 스타일로, "DA 방법 × 데이터셋" 히트맵 추천).
+## 6. 선정 방법 튜닝 및 확장 (4단계) — 완료
+
+1. ~~3단계에서 고른 방법의 hyperparameter를 조정~~ → TENT에 diversity 정규화 추가(collapse 방지), AdaBN에 momentum 블렌딩(0.05~0.3) 시도 — 둘 다 마스킹-only를 못 넘어 최종안에서 제외하고 SHOT으로 확정.
+2. Bangladesh에서 검증된 코드를 Taiwan·PlantDoc에 그대로 재실행했다 (`src/adapt/domain_adaptation.py --dataset all`, dataset만 바꿔 호출하는 구조 그대로 사용).
+3. 3개 데이터셋 전체 비교표는 위 섹션 5 참고, 그래프는 `results/figures/domain_adaptation_comparison.png`, `negative_transfer_evidence.png`.
 
 ## 7. 리스크 / 한계 노트
 
-- **교수님 확인 미해결**: 섹션 2의 가정이 틀리면 TENT(및 향후 SHOT) 결과를 보고서에서 제외해야 할 수 있음. AdaBN은 어느 해석에서도 안전.
+- **교수님 확인 미해결**: 섹션 2의 가정이 틀리면 TENT/SHOT처럼 target 이미지로 파라미터를 업데이트하는 방법의 결과를 보고서에서 제외해야 할 수 있음. AdaBN(통계만 교체)과 class-restriction 마스킹은 어느 해석에서도 안전.
 - **Bangladesh 클래스 불균형**: Target_Spot(47장)처럼 샘플이 적은 클래스는 DA 이후에도 신뢰도 낮은 지표가 나올 수 있음 — class-wise 지표를 반드시 같이 보고.
-- **Taiwan은 3클래스뿐**이라 partial-set 문제를 다루기엔 좋지만, 방법 비교(3단계)의 "일반적 효과" 결론을 내리기엔 표본이 좁음 — 1차 결론은 Bangladesh 기준으로, Taiwan은 참고로만 사용.
+- **Taiwan은 3클래스뿐**이라 partial-set 문제를 다루기엔 좋지만 표본이 좁다 — 다만 이번엔 3개 데이터셋 전부를 측정해 이 문제가 완화됐다.
+- **seed42 단일 실행**: 3-seed(42/123/2026) 재현성 검증이 아직 안 끝났다. seed123/2026로 `tiny_cnn_c`를 96px·bicubic 기준 재학습한 뒤 이 섹션 5의 비교를 다시 돌릴 계획.
 
 ## 8. 참고문헌 (기존 PDF에서 유지 + 확인)
 
 - Li et al., *Revisiting Batch Normalization for Practical Domain Adaptation* (arXiv, 2016) — AdaBN
 - Wang et al., *Tent: Fully Test-Time Adaptation by Entropy Minimization*, ICLR 2021 — TENT (공식 코드: DequanWang/tent)
-- Liang, Hu, Feng, *Do We Really Need to Access the Source Data? Source Hypothesis Transfer for Unsupervised Domain Adaptation*, ICML 2020 — SHOT (보류)
+- Liang, Hu, Feng, *Do We Really Need to Access the Source Data? Source Hypothesis Transfer for Unsupervised Domain Adaptation*, ICML 2020 — SHOT, 최종 채택
 - Cao et al., *Partial Adversarial Domain Adaptation*, ECCV 2018 — PADA (이론적 근거용)
 - Cao et al., *Learning to Transfer Examples for Partial Domain Adaptation*, CVPR 2019 — ETN (이론적 근거용)
 - Wu et al., *From Laboratory to Field: Unsupervised Domain Adaptation for Plant Disease Recognition in the Wild*, Plant Phenomics, 2023 — 실제 존재 확인함(웹 검색), MSUN 제안, **PlantDoc에서 56.06% 달성**. 우리 목표(약 60%)가 최신 전용 DA 기법과 비슷한 수준의 현실적 목표임을 보여주는 근거로 인용 가능.

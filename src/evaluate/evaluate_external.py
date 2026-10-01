@@ -35,6 +35,21 @@ from utils.io import save_json  # noqa: E402
 ALL_LABEL_IDS = list(range(len(CLASS_NAMES)))
 
 
+def _predict_all_masked(model, loader, device, class_mask) -> tuple[list[int], list[int]]:
+    """predict_all과 동일하지만, target에 없다고 미리 알려진 클래스의 로짓에 -inf를 더해
+    argmax 후보에서 제외한다 (class-restriction 마스킹, domain_adaptation.py 참고)."""
+    model.eval()
+    all_preds, all_labels = [], []
+    with torch.no_grad():
+        for images, labels in loader:
+            images = images.to(device)
+            outputs = model(images) + class_mask
+            preds = outputs.argmax(dim=1).cpu().tolist()
+            all_preds.extend(preds)
+            all_labels.extend(labels.tolist())
+    return all_preds, all_labels
+
+
 def evaluate_model_on_external(
     model,
     model_name: str,
@@ -46,14 +61,21 @@ def evaluate_model_on_external(
     seed: int,
     device,
     batch_size: int = 32,
+    class_mask=None,
 ) -> dict:
     """이미 준비된 model(가중치 로드/도메인 적응 등 끝난 상태)을 외부 데이터로 평가하고 저장한다.
     run_name이 결과 저장 경로(results/external/<dataset>/<run_name>/seed<seed>/)를 결정하므로,
     domain adaptation처럼 같은 base 가중치에서 파생된 여러 변형을 구분할 때 run_name에 접미사를
-    붙여서 호출한다 (예: "tiny_cnn_c_res96_bicubic_adabn")."""
+    붙여서 호출한다 (예: "tiny_cnn_c_res96_bicubic_adabn").
+
+    class_mask: (num_classes,) 텐서, target에 없는 클래스 위치가 -inf면 해당 클래스로는
+    예측하지 않는다 (class-restriction 마스킹 평가 전용, 기본은 마스킹 없음)."""
     loader = make_external_dataloader(data_dir, img_size, batch_size, interpolation=INTERPOLATION_MODES[interp])
 
-    preds, labels = predict_all(model, loader, device)
+    if class_mask is not None:
+        preds, labels = _predict_all_masked(model, loader, device, class_mask)
+    else:
+        preds, labels = predict_all(model, loader, device)
 
     present_ids = sorted(set(labels))
     present_names = [CLASS_NAMES[i] for i in present_ids]

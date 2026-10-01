@@ -66,6 +66,15 @@ PLANTDOC_CLASS_MAPPING = {
     "Tomato two spotted spider mites leaf": None,  # 원본 2장뿐 → 제외
 }
 
+# 데이터셋별로 "실제 존재하는" PlantVillage 클래스 (위 매핑에서 None을 제외한 값들).
+# domain_adaptation.py의 class-restriction 마스킹이 이 목록을 기준으로 삼는다 —
+# target ground truth를 본 게 아니라 설계 단계부터 알고 있던 매핑표이므로 label 누출이 아니다.
+EXTERNAL_PRESENT_CLASSES = {
+    "taiwan": sorted(set(TAIWAN_CLASS_MAPPING.values())),
+    "bangladesh_bbox": sorted({v for v in BANGLADESH_CLASS_ID_MAPPING.values() if v is not None}),
+    "plantdoc": sorted({v for v in PLANTDOC_CLASS_MAPPING.values() if v is not None}),
+}
+
 
 # ============================================================
 # 한국어 클래스 설명 (웹 시스템용)
