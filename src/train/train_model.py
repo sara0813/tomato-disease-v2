@@ -127,7 +127,8 @@ def train_model(
 ) -> dict:
     """img_size를 주면 해당 모델의 기본 입력 해상도 대신 이 (H,W)로 학습한다
     (해상도 축소 효과 비교용, RQ3). interp을 bilinear가 아닌 값으로 주면 리사이즈
-    보간법을 바꿔 학습한다 (bicubic/lanczos/area). 이때 결과 경로는 원래 결과를
+    보간법을 바꿔 학습한다 (bicubic/lanczos/area — area는 CLI 값일 뿐 실제로는 PIL BOX 필터,
+    dataset.py의 INTERPOLATION_MODES 참고). 이때 결과 경로는 원래 결과를
     덮어쓰지 않도록 run_name에 _res{H}, _{interp} 접미사를 붙여 분리한다.
 
     resume=True(기본)면 같은 run_name/seed의 checkpoint.pt가 있을 때 그 지점부터
@@ -332,7 +333,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--interp", choices=list(INTERPOLATION_MODES.keys()), default="bilinear",
-        help="리사이즈 보간법 (기본 bilinear). bicubic/lanczos/area로 비교 실험 가능",
+        help="리사이즈 보간법 (기본 bilinear). bicubic/lanczos/area(=PIL BOX)로 비교 실험 가능",
     )
     parser.add_argument(
         "--no-resume", action="store_true",

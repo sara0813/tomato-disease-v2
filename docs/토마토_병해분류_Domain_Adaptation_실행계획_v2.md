@@ -27,7 +27,7 @@
 | 학습 시간 | 76분 (128px bicubic 96분 대비 21% 절약) |
 | 파라미터 / FLOPs | 31.5K / 74M (tiny_cnn_b 대비 1/8, 1/5.5) |
 
-선정 근거: **경량화가 프로젝트 목표**이므로, 내부 정확도·외부 일반화가 128px bicubic(1위)과 거의 동급(0.1~0.3%p 차이)이면서 해상도가 낮아 학습·추론 연산량이 더 적은 96px을 최종으로 선택했다. 128px area가 내부 정확도만 보면 더 높았지만(96.96%) 외부 일반화는 오히려 중간 수준이었고 학습 시간도 제일 길어 제외했다. (상세 비교는 `results/figures/resolution_interp_matrix_tiny_cnn_c.png`, `external_interp_matrix_tiny_cnn_c.png`, `training_time_matrix_tiny_cnn_c.png` 참고).
+선정 근거: **경량화가 프로젝트 목표**이므로, 내부 정확도·외부 일반화가 128px bicubic(1위)과 거의 동급(0.1~0.3%p 차이)이면서 해상도가 낮아 학습·추론 연산량이 더 적은 96px을 최종으로 선택했다. 128px box(torchvision/PIL에 OpenCV area 보간이 없어 같은 개념으로 대응시킨 필터)가 내부 정확도만 보면 더 높았지만(96.96%) 외부 일반화는 오히려 중간 수준이었고 학습 시간도 제일 길어 제외했다. (상세 비교는 `results/figures/resolution_interp_matrix_tiny_cnn_c.png`, `external_interp_matrix_tiny_cnn_c.png`, `training_time_matrix_tiny_cnn_c.png` 참고).
 
 이 모델의 외부 데이터셋 source-only 성능(Accuracy, Macro F1, class-wise F1/Recall, confusion matrix)은 이미 `results/external/*/tiny_cnn_c_res96_bicubic/seed42/`에 저장되어 있다 — **다시 측정할 필요 없음**.
 

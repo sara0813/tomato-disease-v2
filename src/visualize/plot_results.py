@@ -149,11 +149,16 @@ def plot_seed_stability():
 
 
 INTERP_METHODS = ("bilinear", "bicubic", "lanczos", "area")
+# 코드/파일 경로상의 내부 식별자는 "area"를 그대로 쓴다(이미 저장된 run_name과 어긋나지 않도록).
+# 다만 torchvision/PIL에는 OpenCV의 INTER_AREA와 똑같은 알고리즘이 없어서 PIL의 BOX 필터로
+# 대응시켰으므로(dataset.py의 INTERPOLATION_MODES 참고), 사람이 보는 그래프/표에는 실제로 쓴
+# 이름인 "box"로 표시한다 — "area"라고 쓰면 OpenCV식 area 보간으로 오해할 수 있어서.
+INTERP_DISPLAY = {"bilinear": "bilinear", "bicubic": "bicubic", "lanczos": "lanczos", "area": "box"}
 
 
 def _tiny_cnn_c_interp_run_name(resolution: int, interp: str) -> str:
     # bilinear 기본 실행만 128px에서 --img-size 없이 돌렸다(run_name="tiny_cnn_c").
-    # bicubic/lanczos/area는 128px에서도 항상 --img-size를 명시해서 돌렸으므로
+    # bicubic/lanczos/area(box)는 128px에서도 항상 --img-size를 명시해서 돌렸으므로
     # run_name이 "tiny_cnn_c_res128_<interp>"로 남는다 — 128px라고 특별 취급하면 안 됨.
     if interp == "bilinear":
         return _tiny_cnn_c_run_name(resolution)
@@ -161,14 +166,14 @@ def _tiny_cnn_c_interp_run_name(resolution: int, interp: str) -> str:
 
 
 def plot_interpolation_comparison(resolution: int):
-    """tiny_cnn_c를 고정 해상도에서 리사이즈 보간법(bilinear/bicubic/lanczos/area)별로
+    """tiny_cnn_c를 고정 해상도에서 리사이즈 보간법(bilinear/bicubic/lanczos/box)별로
     학습한 내부 정확도 비교. 아직 안 돌린 보간법이 있으면 있는 것만으로 그린다."""
     rows = []
     for interp in INTERP_METHODS:
         run_name = _tiny_cnn_c_interp_run_name(resolution, interp)
         p = internal_result_dir(run_name) / "metrics.json"
         if p.exists():
-            rows.append({"interp": interp, "accuracy": load_json(p)["accuracy"] * 100})
+            rows.append({"interp": INTERP_DISPLAY[interp], "accuracy": load_json(p)["accuracy"] * 100})
 
     if len(rows) < 2:
         return
@@ -214,7 +219,7 @@ def plot_resolution_interp_matrix(resolutions=(64, 96, 128, 224)):
     ax.set_xticks(range(len(resolutions)))
     ax.set_xticklabels([f"{r}px" for r in resolutions])
     ax.set_yticks(range(len(INTERP_METHODS)))
-    ax.set_yticklabels(INTERP_METHODS)
+    ax.set_yticklabels([INTERP_DISPLAY[m] for m in INTERP_METHODS])
     ax.set_xlabel("입력 해상도", fontsize=18, fontweight="bold")
     ax.set_ylabel("리사이즈 보간법", fontsize=18, fontweight="bold")
     ax.tick_params(axis="both", labelsize=15)
@@ -258,7 +263,7 @@ def plot_training_time_matrix(resolutions=(64, 96, 128, 224)):
     ax.set_xticks(range(len(resolutions)))
     ax.set_xticklabels([f"{r}px" for r in resolutions])
     ax.set_yticks(range(len(INTERP_METHODS)))
-    ax.set_yticklabels(INTERP_METHODS)
+    ax.set_yticklabels([INTERP_DISPLAY[m] for m in INTERP_METHODS])
     ax.set_xlabel("입력 해상도", fontsize=18, fontweight="bold")
     ax.set_ylabel("리사이즈 보간법", fontsize=18, fontweight="bold")
     ax.tick_params(axis="both", labelsize=15)
@@ -308,7 +313,7 @@ def plot_external_interp_matrix(resolutions=(64, 96, 128, 224)):
     ax.set_xticks(range(len(resolutions)))
     ax.set_xticklabels([f"{r}px" for r in resolutions])
     ax.set_yticks(range(len(INTERP_METHODS)))
-    ax.set_yticklabels(INTERP_METHODS)
+    ax.set_yticklabels([INTERP_DISPLAY[m] for m in INTERP_METHODS])
     ax.set_xlabel("입력 해상도", fontsize=18, fontweight="bold")
     ax.set_ylabel("리사이즈 보간법", fontsize=18, fontweight="bold")
     ax.tick_params(axis="both", labelsize=15)
@@ -330,9 +335,20 @@ def plot_external_interp_matrix(resolutions=(64, 96, 128, 224)):
 
 
 def plot_efficiency_tradeoff():
+    """파라미터/FLOPs 대비 내부 정확도. 정확도는 seed 42/123/2026 평균±표준편차를 쓴다
+    (seed 하나만 보면 우연히 벌어지는 순위 역전을 트레이드오프로 오인할 수 있어서)."""
     eff = pd.read_csv(EFFICIENCY_RESULT_DIR / "efficiency.csv")
-    acc = {m: load_json(internal_result_dir(m) / "metrics.json")["accuracy"] for m in TINY_MODELS}
-    eff["accuracy"] = eff["model"].map(acc) * 100
+    acc_mean, acc_std = {}, {}
+    for m in TINY_MODELS:
+        accs = []
+        for seed in SEEDS:
+            p = internal_result_dir(m, seed) / "metrics.json"
+            if p.exists():
+                accs.append(load_json(p)["accuracy"] * 100)
+        acc_mean[m] = np.mean(accs)
+        acc_std[m] = np.std(accs, ddof=1) if len(accs) > 1 else 0.0
+    eff["accuracy"] = eff["model"].map(acc_mean)
+    eff["accuracy_std"] = eff["model"].map(acc_std)
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6.5))
 
@@ -341,13 +357,19 @@ def plot_efficiency_tradeoff():
         (axes[1], "flops_mflops", "FLOPs (M)"),
     ]:
         for _, row in eff.iterrows():
-            ax.scatter(row[x_col], row["accuracy"], s=300, color=MODEL_COLORS[row["model"]], zorder=3)
+            ax.errorbar(
+                row[x_col], row["accuracy"], yerr=row["accuracy_std"], fmt="o", markersize=17,
+                color=MODEL_COLORS[row["model"]], ecolor=MODEL_COLORS[row["model"]], capsize=6, elinewidth=2, zorder=3,
+            )
             ax.annotate(
                 row["model"], (row[x_col], row["accuracy"]),
-                textcoords="offset points", xytext=(0, 14), ha="center", fontsize=14, fontweight="bold",
+                textcoords="offset points", xytext=(0, 16), ha="center", fontsize=14, fontweight="bold",
             )
-        ax.set_xlabel(x_label)
-        ax.set_ylabel("내부 테스트 Accuracy (%)")
+        ax.set_xlabel(x_label, fontsize=18, fontweight="bold")
+        ax.set_ylabel("내부 정확도 (%)", fontsize=18, fontweight="bold")
+        ax.tick_params(axis="both", labelsize=14)
+        for label in ax.get_xticklabels() + ax.get_yticklabels():
+            label.set_fontweight("bold")
         ax.grid(True, alpha=0.3)
 
     axes[0].set_title("파라미터 수 vs 정확도")

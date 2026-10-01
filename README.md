@@ -108,7 +108,7 @@ seed 42/123/2026 3개 평균으로는 tiny_cnn_b 26.37% (최선) · tiny_cnn_c 2
 seed 재현성은 셋 중 가장 좋다. 이 프로젝트의 목표가 경량화인 만큼, 작은 성능 손실로 8배 작은 모델을
 얻는 tiny_cnn_c를 최종 구조로 선택했다.
 
-**2단계 — 해상도 × 보간법 튜닝.** tiny_cnn_c를 64/96/128/224px × bilinear/bicubic/lanczos/area
+**2단계 — 해상도 × 보간법 튜닝.** tiny_cnn_c를 64/96/128/224px × bilinear/bicubic/lanczos/box(≈OpenCV area)
 13개 조합(224px는 학습 1회 5시간이 걸려 bilinear만 측정)으로 비교했다 — 관련 그래프:
 `results/figures/resolution_interp_matrix_tiny_cnn_c.png`(내부 정확도), `external_interp_matrix_tiny_cnn_c.png`
 (외부 평균), `training_time_matrix_tiny_cnn_c.png`(학습 시간).
@@ -116,11 +116,12 @@ seed 재현성은 셋 중 가장 좋다. 이 프로젝트의 목표가 경량화
 | 설정 | 내부 정확도 | 외부 평균 | 학습 시간 |
 |---|---|---|---|
 | 128px bilinear (기존 기준) | 96.26% | 20.21% | 68.5분 |
-| 128px area (내부 정확도 최고) | **96.96%** | 21.89% | 113.3분 (가장 느림) |
+| 128px box (내부 정확도 최고) | **96.96%** | 21.89% | 113.3분 (가장 느림) |
 | **96px bicubic (최종 선택)** | 96.59% | **23.02%** | 75.9분 |
 | 128px bicubic | 96.66% | 23.31% (전체 1위) | 95.7분 |
 
-128px area가 내부 정확도는 가장 높지만 외부 일반화는 중간 수준이고 학습도 가장 오래 걸려 제외했다.
+128px box가 내부 정확도는 가장 높지만 외부 일반화는 중간 수준이고 학습도 가장 오래 걸려 제외했다.
+(box는 torchvision/PIL에 OpenCV의 area 보간이 따로 없어서 같은 개념으로 대응시킨 필터다 — `src/dataset.py`의 `INTERPOLATION_MODES` 참고.)
 96px bicubic은 128px bicubic(13개 조합 중 외부 1위)과 내부·외부 정확도 모두 0.1~0.3%p밖에 차이
 안 나면서 학습 시간은 21% 더 짧다 — 해상도가 낮아 추론 연산량도 비례해 줄어들므로(96²/128²≈0.56배)
 경량화 목표에 가장 부합하는 균형점으로 최종 선택했다. 참고로 이 작은 모델은 CPU + `num_workers=0`
