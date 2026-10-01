@@ -5,19 +5,23 @@
 실제 촬영 환경의 어려운 이미지에서도 쓸 수 있는 **작고 빠른** 토마토 병해 분류 모델을 직접 설계하고,
 대형 모델과 비교해 **정확도 · 효율성 · 강건성 · 일반화**의 균형을 검증하는 프로젝트. PyTorch 기반.
 
-## 진행 상태 (2026-09-17 기준)
+## 진행 상태 (2026-10-01 기준)
 
 | 단계 | 내용 | 상태 |
 |---|---|---|
 | 1 | 경량 모델 설계 + 학습 (Tiny CNN A/B/C) | ✅ 완료 |
 | 2 | 내부 성능 평가 | ✅ 완료 |
 | 3 | 효율성 평가 | ✅ 완료 |
-| 4 | Corruption 강건성 평가 | ✅ 완료 |
+| 4 | Corruption 강건성 평가 | ✅ 완료 (seed 42/123/2026 반복) |
 | 5 | 외부 데이터 평가 | ✅ 완료 |
-| 6 | 최종 모델 선정 | ⏸️ 보류 (정확도·크기·강건성·일반화 중 우선순위 판단 필요) |
+| 5.5 | Seed 재현성 (42/123/2026) | ✅ 완료 |
+| 5.6 | 해상도 × 리사이즈 보간법 튜닝 (tiny_cnn_c) | ✅ 완료 |
+| 6 | 최종 모델 선정 | ✅ 완료 — **tiny_cnn_c, 96px, bicubic 리사이즈** |
 | 7 | 웹 시스템 적용 | ✅ 프로토타입 완료 (`app/streamlit_app.py`, 모델 선택형) |
+| 8 | Domain Adaptation (AdaBN/TENT) | 🔄 1차 완료 — 둘 다 source-only보다 악화, negative transfer 확인 (아래 참고) |
 
-진행 과정과 판단 근거를 상세히 정리한 슬라이드(23장, 그룹 분할 재학습 결과 반영): `docs/CNN_토마토_병해분류_V2_진행보고.pptx`
+진행 과정과 판단 근거를 상세히 정리한 슬라이드: `docs/CNN_토마토_병해분류_V2_진행보고.pptx`
+(2026-10-01 기준 26장 — 최종 모델 선정·seed 재현성·Domain Adaptation 결과 반영)
 
 ## 연구 질문
 
@@ -26,7 +30,7 @@
 | RQ1 | 대형 사전학습 모델보다 훨씬 작은 CNN으로 유사한 내부 분류 성능을 얻을 수 있는가? |
 | RQ2 | 작은 모델이 조명 변화, 블러, 노이즈 및 부분 가림에도 안정적으로 분류할 수 있는가? |
 | RQ3 | 모델 크기와 정확도 사이에서 가장 효율적인 구조는 무엇인가? |
-| RQ4 | PlantVillage로 학습한 경량 모델이 Taiwan · Bangladesh 데이터에도 일반화되는가? |
+| RQ4 | PlantVillage로 학습한 경량 모델이 Taiwan · Bangladesh · PlantDoc 데이터에도 일반화되는가? |
 
 ## 1차 실험(V1)에서 확인한 문제
 
@@ -50,14 +54,15 @@
 
 ### 내부 성능 (`results/internal/`)
 
-| 모델 | 파라미터 | 내부 test Accuracy | Macro F1 |
+| 모델 | 파라미터 | 내부 test Accuracy (seed42) | seed 42/123/2026 평균 ± 표준편차 |
 |---|---|---|---|
-| tiny_cnn_a (최소형) | 94,762 | 96.59% | 0.9572 |
-| **tiny_cnn_b (중간형)** | 242,474 | **98.42%** | 0.9766 |
-| tiny_cnn_c (Depthwise) | **31,498** | 96.26% | 0.9530 |
+| tiny_cnn_a (최소형) | 94,762 | 96.59% | 96.36% ± 0.46 |
+| **tiny_cnn_b (중간형)** | 242,474 | **98.42%** | **97.64% ± 0.64** |
+| tiny_cnn_c (Depthwise) | **31,498** | 96.26% | 96.46% ± **0.25** (가장 안정적) |
 
-V1 최고 기록(EfficientNetB0 86.21%)보다 세 모델 모두 높다. `tiny_cnn_b`가 가장 정확하고,
-`tiny_cnn_c`는 `tiny_cnn_b`의 13% 크기로도 2%p 이내 차이 — Depthwise Separable Conv의 설계
+V1 최고 기록(EfficientNetB0 86.21%)보다 세 모델 모두 높다. `tiny_cnn_b`가 가장 정확하지만
+seed 간 편차도 가장 크고(±0.64), `tiny_cnn_c`는 `tiny_cnn_b`의 13% 크기로도 평균 1.18%p
+이내 차이면서 재현성(seed 안정성)은 셋 중 가장 좋다 — Depthwise Separable Conv의 설계
 의도가 실측으로 확인됨(RQ1, RQ3).
 
 ### 효율성 (`results/efficiency/`)
@@ -79,7 +84,9 @@ V1 최고 기록(EfficientNetB0 86.21%)보다 세 모델 모두 높다. `tiny_cn
 | blur | 48.46% | |
 | brightness | 60.41% | 가장 취약 (학습에 밝기 증강 안 씀) |
 
-모델별 평균 저하율: tiny_cnn_b 25.91% (최선) · tiny_cnn_c 30.35% · tiny_cnn_a 32.92%.
+모델별 평균 저하율(seed42): tiny_cnn_b 25.91% (최선) · tiny_cnn_c 30.35% · tiny_cnn_a 32.92%.
+seed 42/123/2026 3개 평균으로는 tiny_cnn_b 26.37% (최선) · tiny_cnn_c 29.74% · tiny_cnn_a 31.28%로
+순위는 그대로 유지된다.
 
 ### 외부 데이터 일반화 (`results/external/`) — RQ4
 
@@ -93,6 +100,33 @@ V1 최고 기록(EfficientNetB0 86.21%)보다 세 모델 모두 높다. `tiny_cn
 크기의 문제가 아니라 실제 환경 일반화 자체가 남은 과제라는 프로젝트의 핵심 문제의식이 재확인됨.
 특히 PlantDoc은 클래스 커버리지가 Taiwan(3개)보다 훨씬 넓은데도(8개) 정확도가 비슷한 ~20%대에
 머문다 — 클래스가 안 겹쳐서 낮은 게 아니라 **진짜 도메인 시프트(실제 촬영 조건) 문제**라는 뜻.
+
+## 최종 모델 선정: tiny_cnn_c, 96px, bicubic 리사이즈
+
+**1단계 — 구조 선택 (A/B/C).** tiny_cnn_b가 정확도·corruption 강건성에서 계속 1위지만 격차가
+크지 않다(정확도 +1.18%p, corruption 저하율 +3.4%p). 반면 tiny_cnn_c는 파라미터 1/8, FLOPs 1/5.5면서
+seed 재현성은 셋 중 가장 좋다. 이 프로젝트의 목표가 경량화인 만큼, 작은 성능 손실로 8배 작은 모델을
+얻는 tiny_cnn_c를 최종 구조로 선택했다.
+
+**2단계 — 해상도 × 보간법 튜닝.** tiny_cnn_c를 64/96/128/224px × bilinear/bicubic/lanczos/area
+13개 조합(224px는 학습 1회 5시간이 걸려 bilinear만 측정)으로 비교했다 — 관련 그래프:
+`results/figures/resolution_interp_matrix_tiny_cnn_c.png`(내부 정확도), `external_interp_matrix_tiny_cnn_c.png`
+(외부 평균), `training_time_matrix_tiny_cnn_c.png`(학습 시간).
+
+| 설정 | 내부 정확도 | 외부 평균 | 학습 시간 |
+|---|---|---|---|
+| 128px bilinear (기존 기준) | 96.26% | 20.21% | 68.5분 |
+| 128px area (내부 정확도 최고) | **96.96%** | 21.89% | 113.3분 (가장 느림) |
+| **96px bicubic (최종 선택)** | 96.59% | **23.02%** | 75.9분 |
+| 128px bicubic | 96.66% | 23.31% (전체 1위) | 95.7분 |
+
+128px area가 내부 정확도는 가장 높지만 외부 일반화는 중간 수준이고 학습도 가장 오래 걸려 제외했다.
+96px bicubic은 128px bicubic(13개 조합 중 외부 1위)과 내부·외부 정확도 모두 0.1~0.3%p밖에 차이
+안 나면서 학습 시간은 21% 더 짧다 — 해상도가 낮아 추론 연산량도 비례해 줄어들므로(96²/128²≈0.56배)
+경량화 목표에 가장 부합하는 균형점으로 최종 선택했다. 참고로 이 작은 모델은 CPU + `num_workers=0`
+환경에서 이미지 디코딩 비용이 conv 연산 비용을 압도해서, 96px과 128px의 학습 시간이 리사이즈
+방법에 따라서는 거의 같게 나오기도 한다(bilinear 기준 68.1분 vs 68.5분) — 해상도를 낮춘다고 학습
+시간이 항상 비례해서 줄지는 않는다는 것도 함께 확인된 점이다.
 
 ### 그룹 분할 전/후 비교 (leakage 수정 효과 실측)
 
@@ -111,6 +145,31 @@ seed42를 그룹 단위 분할(위 [그룹 단위 분할](#그룹-단위-분할-
 소폭 상승)인데, 외부셋은 PlantVillage 내부 분할과 무관한 완전히 별도의 데이터라 이 변동은 그룹 분할
 자체의 효과가 아니라 재학습에 따른 원래 랜덤 변동 범위로 해석하는 게 맞다. 구 결과(`seed42_predup/`)는
 비교 근거로 당분간 남겨두고, 확인이 끝나면 삭제할 예정이다.
+
+## Domain Adaptation (AdaBN / TENT) — 1차 실험
+
+외부 일반화(RQ4)가 여전히 낮은 문제를 완화하기 위해, 최종 모델(tiny_cnn_c, 96px, bicubic)에
+source-free·target-label 미사용 조건으로 AdaBN과 TENT를 적용해봤다. 자세한 실험 설계와 교수님
+확인이 필요한 가정은 `docs/토마토_병해분류_Domain_Adaptation_실행계획_v2.md` 참고, 코드는
+`src/adapt/domain_adaptation.py`.
+
+| 데이터셋 | 클래스 겹침 | Source-only | AdaBN | TENT |
+|---|---|---|---|---|
+| Taiwan | 3/10 | 27.39% | 7.64% | 7.64% |
+| Bangladesh | 6/10 | 21.80% | 10.17% | 9.17% |
+| PlantDoc | 8/10 | 19.89% | 13.12% | 11.00% |
+
+**둘 다 기대와 반대로 source-only보다 성능이 떨어졌다.** 예측 분포를 분석해보니 원인은 명확하다 —
+AdaBN/TENT 모두 PlantVillage 10개 클래스 전체 기준으로 BN 통계/예측을 재조정하는데, 외부 데이터는
+일부 클래스만 존재해서(partial label-space) 존재하지 않는 클래스 쪽으로 예측이 쏠리는
+**negative transfer**가 발생했다. 게다가 **클래스 겹침이 적을수록 저하 폭이 더 크다**(Taiwan 72%
+상대적 하락 > Bangladesh 53~58% > PlantDoc 34~45%) — 설계 문서가 PADA 논문을 인용해 이론적으로
+경고했던 partial-domain-adaptation 문제가 실측으로 정확히 재현된 것이다. 구현 정확성은 BN 통계/파라미터
+변화량을 직접 검증해 확인했다(AdaBN은 conv weight 불변·BN 통계만 변화, TENT는 conv weight 불변·BN
+affine만 변화).
+
+**다음 단계 후보:** partial-set을 고려하는 SHOT(pseudo-labeling + information maximization) 또는
+PADA 스타일의 클래스 가중치 적용 — 현재는 미착수.
 
 ## 데이터셋
 
@@ -137,8 +196,9 @@ seed42를 그룹 단위 분할(위 [그룹 단위 분할](#그룹-단위-분할-
 | 3 | 효율성 평가 | `src/evaluate/measure_efficiency.py` | `results/efficiency/` |
 | 4 | Corruption 평가 | `src/evaluate/evaluate_corruption.py` | `results/corruption/` |
 | 5 | 외부 데이터 평가 | `src/evaluate/evaluate_external.py` | `results/external/` |
-| 6 | 최종 모델 선정 (보류) | `src/summary/make_summary.py` | `results/summary/model_comparison.*` (비교표만, 판단 없음) |
+| 6 | 최종 모델 선정 — tiny_cnn_c/96px/bicubic | `src/train/train_model.py --img-size --interp` | `results/figures/*_interp_matrix_tiny_cnn_c.png` |
 | 7 | 시스템 적용 | `app/streamlit_app.py` | 웹 프로토타입 (모델 선택형) |
+| 8 | Domain Adaptation (AdaBN/TENT, 1차) | `src/adapt/domain_adaptation.py` | `results/external/*/*_adabn/`, `*_tent/` |
 
 **Corruption은 학습 증강이 아니라 평가용 변형이다.** 밝기 · 그림자 · 반사 · 블러 · 노이즈 · 가림
 6개 조건 × 약/중/강 3단계로 **테스트 이미지만** 변형해 모델별 성능 저하율을 비교한다. 학습 데이터에는
@@ -147,22 +207,23 @@ seed42를 그룹 단위 분할(위 [그룹 단위 분할](#그룹-단위-분할-
 최종 모델은 최고 정확도 하나로 고르지 않는다.
 ① 내부 성능 ② 외부 일반화 ③ corruption 저하율 ④ 파라미터 수 ⑤ 모델 크기 ⑥ CPU 추론시간을 종합한다.
 
-### 반복실험 (재현성)
+### 반복실험 (재현성) — 완료
 
-현재는 seed 42 1회 학습·평가만 완료된 상태다(아래 그룹 단위 분할로 재학습한 버전). 결과가 특정
-seed의 우연이 아님을 보이기 위해 `config.SEEDS = [42, 123, 2026]` 3개 seed로 반복 학습·평가하여
-평균±표준편차를 보고할 계획이다(seed 123, 2026은 아직 미실행). `train_model.py` / `evaluate_*.py`는
-모두 `--seed` 인자를 받고, `config.model_path()`와 `*_result_dir()` 헬퍼가 seed별로 경로를 분리한다
+`config.SEEDS = [42, 123, 2026]` 3개 seed로 tiny_cnn_a/b/c를 전부 재학습하고 내부·corruption·외부
+평가까지 완료했다. 결과가 특정 seed의 우연이 아님을 확인했다 — 위 내부 성능·corruption 표의
+"평균 ± 표준편차" 열 참고. `train_model.py` / `evaluate_*.py`는 모두 `--seed` 인자를 받고,
+`config.model_path()`와 `*_result_dir()` 헬퍼가 seed별로 경로를 분리한다
 (`models/<model>/seed<seed>.pt`, `results/<단계>/<model>/seed<seed>/`)
 — 다른 seed로 다시 실행해도 기존 seed의 가중치·로그는 덮어쓰이지 않는다.
 
-**완료:** seed별 결과가 쌓이면 자동으로 집계하는 `src/summary/aggregate_seeds.py`를 미리 만들어뒀다.
-`config.SEEDS` 중 실제로 완료된 seed만 모아 모델별 평균 Accuracy · 표준편차 · 평균 Macro F1 ·
-최고/최저 성능을 계산해 `results/summary/seed_aggregate.{csv,md}`에 저장한다. 지금은 seed42 1개뿐이라
-표준편차는 N/A로 나오고(샘플 1개로는 계산 불가), seed 123/2026 학습이 끝난 뒤 다시 실행하면 채워진다.
+`src/summary/aggregate_seeds.py`가 `config.SEEDS` 중 완료된 seed를 모아 모델별 평균 Accuracy ·
+표준편차 · 평균 Macro F1 · 최고/최저 성능을 계산해 `results/summary/seed_aggregate.{csv,md}`에
+저장한다. **tiny_cnn_c가 세 모델 중 seed 재현성이 가장 좋다**(표준편차 0.25%p, tiny_cnn_b는 0.64%p)
+— 최종 모델 선정에서 이 안정성도 함께 고려했다(아래 참고).
 
-**향후 계획:** seed 123, 2026으로 tiny_cnn_a/b/c 학습 + 4단계 평가 전체 실행 (CPU 기준 seed당
-학습 약 5시간, corruption 평가가 가장 오래 걸림 — 1회성 작업으로 백그라운드 실행 예정).
+학습은 중간에 끊겨도 안전하다 — `train_model.py`가 매 epoch마다 체크포인트(모델/옵티마이저/rng 상태)를
+저장하고, 같은 run을 다시 실행하면 자동으로 그 지점부터 이어서 학습한다(`--no-resume`으로 끄고 처음부터
+새로 시작 가능). 실제로 세션이 끊긴 상황에서 정확히 이어받아 끝까지 완주하는 것까지 검증했다.
 
 ### 그룹 단위 분할 (leakage 방지)
 
@@ -204,8 +265,9 @@ tomato_V2/
 │   ├── data_prep/        # 분할 · 외부 데이터 변환 · 무결성/불균형/leakage 점검
 │   ├── models/           # tiny_cnn(A/B/C, nn.Module) · reference(인용용) · 레지스트리
 │   ├── corruption/       # 변형 정의(6조건×3단계) · 변형셋 생성
-│   ├── train/            # train_model.py — 모델 이름 인자 하나로 통일, early stopping, 즉시 체크포인트 저장
+│   ├── train/            # train_model.py — 모델 이름 인자 하나로 통일, --img-size/--interp 튜닝, 체크포인트 재개
 │   ├── evaluate/         # 내부 · 효율 · corruption · 외부 평가
+│   ├── adapt/            # domain_adaptation.py — AdaBN/TENT (source-free, target label 미사용)
 │   ├── summary/          # 종합 비교표 (V2 실측 + V1 인용, 판단 없음)
 │   ├── visualize/        # 결과 그래프 (results/figures/*.png)
 │   └── utils/            # 시드 · 입출력
@@ -214,7 +276,7 @@ tomato_V2/
 │                         #   (efficiency·summary·figures 제외하고는 <model>/seed<seed>/ 로 분리 저장)
 ├── app/                  # Streamlit 웹 프로토타입 (모델 선택형, 정상/비정상 색상 표시)
 ├── notebooks/
-└── docs/                 # 프로젝트 브리프 PDF + V2 진행 보고 PPTX
+└── docs/                 # 프로젝트 브리프 PDF · V2 진행 보고 PPTX · Domain Adaptation 실행계획 MD
 ```
 
 ## 실행 순서
@@ -242,12 +304,21 @@ python src/train/train_model.py --model tiny_cnn_a
 python src/train/train_model.py --model tiny_cnn_b
 python src/train/train_model.py --model tiny_cnn_c
 
+# 해상도 × 보간법 튜닝 (최종 모델 tiny_cnn_c/96px/bicubic을 고른 실험)
+# --img-size/--interp 생략 시 기본(128px, bilinear). run_name에 자동으로 접미사가 붙어 분리 저장된다.
+python src/train/train_model.py --model tiny_cnn_c --img-size 96 --interp bicubic
+python src/evaluate/evaluate_internal.py --model tiny_cnn_c --img-size 96 --interp bicubic
+python src/evaluate/evaluate_external.py --model tiny_cnn_c --img-size 96 --interp bicubic
+
 # 평가 — internal/corruption/external은 --seed 지정 가능(생략 시 config.SEED).
 # measure_efficiency는 seed와 무관(구조로만 결정되는 파라미터 수·FLOPs·크기 측정)이라 --seed 없음.
 python src/evaluate/evaluate_internal.py
 python src/evaluate/measure_efficiency.py
 python src/evaluate/evaluate_corruption.py
 python src/evaluate/evaluate_external.py
+
+# Domain Adaptation (AdaBN/TENT) — 최종 모델에 적용, target label 미사용
+python src/adapt/domain_adaptation.py --model tiny_cnn_c --img-size 96 --interp bicubic --dataset bangladesh_bbox --method all
 
 # 종합 + 시각화
 python src/summary/make_summary.py
@@ -264,4 +335,6 @@ Windows에서 한글 출력이 깨지면 `PYTHONUTF8=1`을 앞에 붙여 실행�
 ## 실행 환경
 
 로컬 CPU 또는 일반 Colab. 고성능 GPU를 전제하지 않는 크기를 목표로 한다 — Tiny CNN 3종은 CPU
-기준 모델당 학습 1.5~2시간 내외(early stopping 포함), 추론은 이미지당 5ms 미만이다.
+기준 128px 학습 시 모델당 1~2.5시간 내외(tiny_cnn_c 68분 ~ tiny_cnn_b 153분, early stopping 포함),
+추론은 이미지당 5ms 미만이다. 해상도를 올리면 학습 시간이 크게 늘 수 있다(224px는 약 5시간/회) —
+자세한 해상도별 실측은 `results/figures/training_time_matrix_tiny_cnn_c.png` 참고.
