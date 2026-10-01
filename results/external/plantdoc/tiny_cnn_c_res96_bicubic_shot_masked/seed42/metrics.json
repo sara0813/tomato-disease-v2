@@ -19,7 +19,7 @@
     "Tomato___Tomato_mosaic_virus",
     "Tomato___healthy"
   ],
-  "accuracy": 0.18053596614950634,
-  "macro_f1": 0.17283275644784085,
-  "weighted_f1": 0.17438988325732804
+  "accuracy": 0.19464033850493653,
+  "macro_f1": 0.18213102171601148,
+  "weighted_f1": 0.18480566209202978
 }

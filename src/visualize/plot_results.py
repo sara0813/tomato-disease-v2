@@ -582,6 +582,55 @@ def plot_negative_transfer_evidence(base_run_name="tiny_cnn_c_res96_bicubic", da
     plt.close(fig)
 
 
+def plot_shot_epoch_sensitivity(base_run_name="tiny_cnn_c_res96_bicubic", datasets=EXTERNAL_DATASETS):
+    """SHOT의 epoch 수에 따른 외부 정확도 변화. cls_loss_weight=0.3(기본값) 고정, epoch만 바꾼
+    3개 결과(1/2/3)를 비교한다. 메인 비교표는 target accuracy를 보고 데이터셋별 최적 epoch을
+    고르지 않기 위해 epoch=2로 고정하는데, 그 근거가 되는 그림 — Taiwan(클래스 3개)은 epoch이
+    늘수록 계속 좋아지지만 Bangladesh(6개)·PlantDoc(8개)은 pseudo-label 과적합으로 꺾인다."""
+    epochs_list = (1, 2, 3)
+
+    def run_name_for(epoch: int) -> str:
+        return base_run_name + "_shot_masked" + ("" if epoch == 2 else f"_ep{epoch}_cw0.3")
+
+    rows = []
+    for ds in datasets:
+        for epoch in epochs_list:
+            p = external_result_dir(ds, run_name_for(epoch)) / "metrics.json"
+            if p.exists():
+                rows.append({"dataset": ds, "epoch": epoch, "accuracy": load_json(p)["accuracy"] * 100})
+
+    if not rows:
+        return
+
+    df = pd.DataFrame(rows)
+    fig, ax = plt.subplots(figsize=(10, 6.5))
+    ds_colors = {"taiwan": "#eb6834", "bangladesh_bbox": "#2a78d6", "plantdoc": "#3fa34d"}
+    for ds in datasets:
+        sub = df[df["dataset"] == ds].sort_values("epoch")
+        if sub.empty:
+            continue
+        ax.plot(sub["epoch"], sub["accuracy"], marker="o", markersize=10, linewidth=3,
+                 color=ds_colors.get(ds, "#898781"), label=ds)
+        for _, r in sub.iterrows():
+            ax.text(r["epoch"], r["accuracy"] + 1.2, f"{r['accuracy']:.1f}%", ha="center",
+                     fontsize=11, fontweight="bold", color=ds_colors.get(ds, "#898781"))
+
+    ax.axvline(2, color="#5B5E6B", linestyle="--", alpha=0.5)
+    ax.text(2.05, ax.get_ylim()[1] * 0.02 + ax.get_ylim()[0], "실제 채택값", fontsize=11, color="#5B5E6B")
+    ax.set_xticks(epochs_list)
+    ax.set_xlabel("SHOT epoch 수", fontsize=15, fontweight="bold")
+    ax.set_ylabel("외부 Accuracy (%)", fontsize=15, fontweight="bold")
+    ax.set_title("SHOT epoch 민감도: Taiwan은 계속 개선, Bangladesh/PlantDoc는 pseudo-label 과적합", fontsize=14, fontweight="bold")
+    ax.legend(fontsize=12)
+    ax.tick_params(axis="both", labelsize=13)
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontweight("bold")
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "shot_epoch_sensitivity.png", dpi=150)
+    plt.close(fig)
+
+
 def plot_confusion_matrices():
     for m in TINY_MODELS:
         cm = pd.read_csv(internal_result_dir(m) / "confusion_matrix.csv", index_col=0)
@@ -693,6 +742,7 @@ def main():
     plot_external_interp_matrix()
     plot_domain_adaptation_comparison()
     plot_negative_transfer_evidence()
+    plot_shot_epoch_sensitivity()
     print(f"저장 완료: {FIGURE_DIR}")
 
 

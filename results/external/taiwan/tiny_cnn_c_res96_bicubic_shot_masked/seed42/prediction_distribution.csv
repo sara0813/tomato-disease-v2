@@ -1,7 +1,7 @@
 ﻿class,predicted_count,predicted_pct,present_in_ground_truth
-Tomato___Late_blight,252,80.25,True
-Tomato___healthy,33,10.51,True
-Tomato___Bacterial_spot,29,9.24,True
+Tomato___Late_blight,247,78.66,True
+Tomato___Bacterial_spot,35,11.15,True
+Tomato___healthy,32,10.19,True
 Tomato___Early_blight,0,0.0,False
 Tomato___Septoria_leaf_spot,0,0.0,False
 Tomato___Leaf_Mold,0,0.0,False

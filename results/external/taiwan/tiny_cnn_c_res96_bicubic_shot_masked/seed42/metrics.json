@@ -14,7 +14,7 @@
     "Tomato___Late_blight",
     "Tomato___healthy"
   ],
-  "accuracy": 0.3853503184713376,
-  "macro_f1": 0.334566632408359,
-  "weighted_f1": 0.32956972002016227
+  "accuracy": 0.42038216560509556,
+  "macro_f1": 0.389072130601366,
+  "weighted_f1": 0.3854875110215593
 }

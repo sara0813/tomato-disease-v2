@@ -256,7 +256,7 @@ def run_one(
     masked: bool = False,
     div_weight: float = 0.0,
     adabn_blend_momentum: float | None = None,
-    shot_epochs: int = 1,
+    shot_epochs: int = 2,
     shot_lr: float = 1e-3,
     shot_cls_weight: float = 0.3,
 ) -> dict:
@@ -298,6 +298,8 @@ def run_one(
         run_name += f"_div{div_weight:g}"
     if adabn_blend_momentum is not None:
         run_name += f"_blend{adabn_blend_momentum:g}"
+    if method == "shot" and (shot_epochs != 2 or shot_cls_weight != 0.3):
+        run_name += f"_ep{shot_epochs}_cw{shot_cls_weight:g}"
     metrics = evaluate_model_on_external(
         model, model_name, run_name, dataset_key, data_dir, img_size, interp, seed, device, batch_size,
         class_mask=class_mask,
@@ -332,7 +334,12 @@ def main() -> None:
         "--adabn-blend-momentum", type=float, default=None,
         help="AdaBN 전용: 주면 완전 교체 대신 이 momentum으로 source/target BN 통계를 블렌딩",
     )
-    parser.add_argument("--shot-epochs", type=int, default=1)
+    parser.add_argument(
+        "--shot-epochs", type=int, default=2,
+        help="2로 고정(모든 데이터셋 공통) — target accuracy를 보고 데이터셋별로 고르면 label-free 전제가 "
+        "깨지므로, epoch 수에 따른 민감도(결과 커지면 Taiwan은 계속 개선되지만 Bangladesh/PlantDoc은 "
+        "pseudo-label 과적합으로 하락)는 별도 분석으로만 보고하고 메인 비교에는 이 고정값을 쓴다",
+    )
     parser.add_argument("--shot-lr", type=float, default=1e-3)
     parser.add_argument(
         "--shot-cls-weight", type=float, default=0.3,

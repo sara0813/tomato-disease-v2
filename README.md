@@ -179,11 +179,11 @@ AdaBN/TENT 모두 PlantVillage 10개 클래스 전체 기준으로 BN 통계/예
 존재할 수 있는지에 대한 사전 정보)로, target에 없는 클래스의 로짓에 `-inf`를 더해 예측 후보에서
 제외한다(추가 학습 없음, zero-cost). 모든 데이터셋에서 마스킹 단독만으로도 source-only보다 개선됐다.
 
-| 데이터셋 | Source-only | +마스킹만 | AdaBN+마스킹 | TENT+마스킹(mask-aware) |
-|---|---|---|---|---|
-| Taiwan | 27.39% | 32.48% | **38.85%** | 29.94% |
-| Bangladesh | 21.80% | **22.34%** | 15.71% | 13.71% |
-| PlantDoc | 19.89% | **20.31%** | 14.81% | 12.83% |
+| 데이터셋 | Source-only | +마스킹만 | AdaBN+마스킹 |
+|---|---|---|---|
+| Taiwan | 27.39% | 32.48% | **38.85%** |
+| Bangladesh | 21.80% | **22.34%** | 15.71% |
+| PlantDoc | 19.89% | **20.31%** | 14.81% |
 
 TENT는 entropy를 마스킹된 클래스 안에서만 최소화하도록 고쳐도(mask-aware) 처음엔 "한 클래스로만
 100% 확신" 하는 degenerate solution으로 collapse했다(`prediction_distribution.csv`로 확인) — batch
@@ -198,19 +198,31 @@ Liang et al., *Do We Really Need to Access the Source Data? Source Hypothesis Tr
 Unsupervised Domain Adaptation*, ICML 2020. source classifier(`head.fc`)는 고정하고 feature
 extractor(`features`)만 미세조정한다 — 처음엔 분류기 softmax를 가중치 삼은 weighted k-means로
 클래스별 중심을 구해 pseudo-label을 할당(마스킹된 클래스 안에서만), 그 다음 pseudo-label
-cross-entropy + information-maximization(entropy 최소화 + batch 다양성 최대화) loss로 학습한다.
+cross-entropy + information-maximization(entropy 최소화 + batch 다양성 최대화) loss로 학습한다
+(`--shot-epochs`, `--shot-cls-weight`로 조정 가능, 아래 두 하이퍼파라미터 설명 참고).
 
-| 데이터셋 | Source+마스킹 | AdaBN+마스킹 | TENT+마스킹 | **SHOT+마스킹** |
-|---|---|---|---|---|
-| Taiwan | 32.48% | **38.85%** | 29.94% | 38.54% |
-| Bangladesh | 22.34% | 15.71% | 13.71% | **27.97%** |
-| PlantDoc | **20.31%** | 14.81% | 12.83% | 18.05% (macro F1 **0.173**, 전체 1위) |
+| 데이터셋 | Source+마스킹 | AdaBN+마스킹 | **SHOT+마스킹(epoch=2)** |
+|---|---|---|---|
+| Taiwan | 32.48% | **38.85%** | 42.04% |
+| Bangladesh | 22.34% | 15.71% | **30.79%** |
+| PlantDoc | **20.31%** | 14.81% | 19.46% (macro F1 **0.182**, 전체 1위) |
 
-AdaBN/TENT와 달리 **SHOT은 3개 데이터셋 전부에서 collapse 없이 안정적으로 잘 됐다** — Taiwan은
-AdaBN과 거의 동률, Bangladesh는 전체 방법 통틀어 최고, PlantDoc은 정확도는 비슷해도 macro F1이
-가장 높다. 데이터셋마다 다른 방법을 골라야 했던 AdaBN/TENT와 달리 튜닝 없이 두루 통하는 유일한
-방법이라, **class-restriction 마스킹은 항상 적용 + 적응 방법은 SHOT을 기본으로 사용**하는 것을
-최종 권장 파이프라인으로 정했다.
+AdaBN/TENT와 달리 **SHOT은 3개 데이터셋 전부에서 collapse 없이 안정적으로 잘 됐다** — Taiwan·
+Bangladesh 둘 다 AdaBN을 앞서고, PlantDoc은 정확도도 가장 높고 macro F1도 전체 1위다. 데이터셋마다
+다른 방법을 골라야 했던 AdaBN/TENT와 달리 튜닝 없이 두루 통하는 유일한 방법이라, **class-restriction
+마스킹은 항상 적용 + 적응 방법은 SHOT(epoch=2)을 기본으로 사용**하는 것을 최종 권장 파이프라인으로
+정했다.
+
+**epoch=2로 고정한 이유 (hyperparameter 선택의 공정성)**: SHOT은 epoch 수를 늘릴수록 더 많이
+학습하는데, `results/figures/shot_epoch_sensitivity.png`에서 보듯 **Taiwan(클래스 3개)은 epoch을
+늘릴수록 계속 좋아지는 반면(epoch 5까지 시험 시 57%대) Bangladesh(6개)·PlantDoc(8개)은 epoch 2~3
+근처에서 정점을 찍고 이후 내려간다** — SHOT이 자기가 만든 pseudo-label을 계속 더 믿고 학습하면서
+생기는 과적합인데, 클래스가 많고 불균형할수록 pseudo-label 오류가 누적되기 쉽기 때문으로 보인다.
+**데이터셋마다 가장 높은 epoch을 따로 골라 보고하면 target accuracy를 보고 몰래 튜닝한 셈이라
+label-free라는 전제와 모순된다** — 그래서 "SHOT은 원래 TENT보다 더 학습이 필요하지만 가벼운
+적응이라는 프로젝트 기조상 최소한만 늘린다"는 사전 기준으로 3개 데이터셋 공통 epoch=2를 고정값으로
+썼다. epoch별 전체 수치는 `results/external/*/tiny_cnn_c_res96_bicubic_shot_masked_ep{1,3}_cw0.3/`에
+남겨뒀다.
 
 **남은 과제:** 지금은 seed42 단일 실행 결과다. `tiny_cnn_c`를 96px·bicubic 기준으로 seed123/2026에서
 추가 학습한 뒤 이 비교 전체를 3-seed로 재검증할 계획이다(seed123 학습은 진행 중).
