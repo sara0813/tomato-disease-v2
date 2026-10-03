@@ -133,6 +133,26 @@ class TinyCNN_C(nn.Module):
         return self.head(self.features(x))
 
 
+class TinyCNN_C_Lite(nn.Module):
+    """C보다 더 경량화: 같은 4블록 깊이·구조이지만 채널을 32→32→64→64로 절반 수준으로
+    줄였다. Domain Adaptation(SHOT)에서 epoch을 조금만 늘려도 과적합되는 현상을 보고,
+    모델 용량 자체를 더 줄이면 완화되는지 보기 위한 버전이다."""
+
+    def __init__(self, input_shape=(3, 128, 128), num_classes: int = 10):
+        super().__init__()
+        in_channels = input_shape[0]
+        self.features = nn.Sequential(
+            ConvBlock(in_channels, 32),
+            DepthwiseSeparableBlock(32, 32),
+            DepthwiseSeparableBlock(32, 64),
+            DepthwiseSeparableBlock(64, 64),
+        )
+        self.head = TinyCNNHead(64, num_classes, dropout=0.4)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.head(self.features(x))
+
+
 def _init_weights(module: nn.Module) -> None:
     """He normal 초기화 (ReLU 계열 활성화에 적합)."""
     if isinstance(module, (nn.Conv2d, nn.Linear)):
@@ -155,5 +175,11 @@ def build_tiny_cnn_b(input_shape=(3, 128, 128), num_classes: int = 10) -> TinyCN
 
 def build_tiny_cnn_c(input_shape=(3, 128, 128), num_classes: int = 10) -> TinyCNN_C:
     model = TinyCNN_C(input_shape, num_classes)
+    model.apply(_init_weights)
+    return model
+
+
+def build_tiny_cnn_c_lite(input_shape=(3, 128, 128), num_classes: int = 10) -> TinyCNN_C_Lite:
+    model = TinyCNN_C_Lite(input_shape, num_classes)
     model.apply(_init_weights)
     return model

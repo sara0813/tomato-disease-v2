@@ -582,12 +582,15 @@ def plot_negative_transfer_evidence(base_run_name="tiny_cnn_c_res96_bicubic", da
     plt.close(fig)
 
 
-def plot_shot_epoch_sensitivity(base_run_name="tiny_cnn_c_res96_bicubic", datasets=EXTERNAL_DATASETS):
+def plot_shot_epoch_sensitivity(
+    base_run_name="tiny_cnn_c_res96_bicubic", datasets=EXTERNAL_DATASETS, epochs_list=(1, 2, 3), out_suffix="",
+    title="SHOT epoch 민감도: Taiwan은 계속 개선, Bangladesh/PlantDoc는 pseudo-label 과적합",
+):
     """SHOT의 epoch 수에 따른 외부 정확도 변화. cls_loss_weight=0.3(기본값) 고정, epoch만 바꾼
-    3개 결과(1/2/3)를 비교한다. 메인 비교표는 target accuracy를 보고 데이터셋별 최적 epoch을
+    결과를 비교한다. 메인 비교표는 target accuracy를 보고 데이터셋별 최적 epoch을
     고르지 않기 위해 epoch=2로 고정하는데, 그 근거가 되는 그림 — Taiwan(클래스 3개)은 epoch이
-    늘수록 계속 좋아지지만 Bangladesh(6개)·PlantDoc(8개)은 pseudo-label 과적합으로 꺾인다."""
-    epochs_list = (1, 2, 3)
+    늘수록 계속 좋아지지만 Bangladesh(6개)·PlantDoc(8개)은 pseudo-label 과적합으로 꺾인다
+    (이 패턴이 모델마다 다를 수 있어 out_suffix로 모델별 그림을 구분해 저장한다)."""
 
     def run_name_for(epoch: int) -> str:
         return base_run_name + "_shot_masked" + ("" if epoch == 2 else f"_ep{epoch}_cw0.3")
@@ -620,14 +623,14 @@ def plot_shot_epoch_sensitivity(base_run_name="tiny_cnn_c_res96_bicubic", datase
     ax.set_xticks(epochs_list)
     ax.set_xlabel("SHOT epoch 수", fontsize=15, fontweight="bold")
     ax.set_ylabel("외부 Accuracy (%)", fontsize=15, fontweight="bold")
-    ax.set_title("SHOT epoch 민감도: Taiwan은 계속 개선, Bangladesh/PlantDoc는 pseudo-label 과적합", fontsize=14, fontweight="bold")
+    ax.set_title(title, fontsize=14, fontweight="bold")
     ax.legend(fontsize=12)
     ax.tick_params(axis="both", labelsize=13)
     for label in ax.get_xticklabels() + ax.get_yticklabels():
         label.set_fontweight("bold")
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
-    fig.savefig(FIGURE_DIR / "shot_epoch_sensitivity.png", dpi=150)
+    fig.savefig(FIGURE_DIR / f"shot_epoch_sensitivity{out_suffix}.png", dpi=150)
     plt.close(fig)
 
 
@@ -743,6 +746,10 @@ def main():
     plot_domain_adaptation_comparison()
     plot_negative_transfer_evidence()
     plot_shot_epoch_sensitivity()
+    plot_shot_epoch_sensitivity(
+        base_run_name="tiny_cnn_c_lite_res96", epochs_list=(1, 2, 3, 5), out_suffix="_tiny_cnn_c_lite",
+        title="SHOT epoch 민감도(tiny_cnn_c_lite): Taiwan·Bangladesh는 계속 개선, PlantDoc만 과적합",
+    )
     print(f"저장 완료: {FIGURE_DIR}")
 
 

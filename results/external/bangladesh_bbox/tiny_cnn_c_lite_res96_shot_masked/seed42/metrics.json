@@ -1,0 +1,23 @@
+{
+  "model": "tiny_cnn_c_lite",
+  "run_name": "tiny_cnn_c_lite_res96_shot_masked",
+  "img_size": [
+    96,
+    96
+  ],
+  "interp": "bilinear",
+  "dataset": "bangladesh_bbox",
+  "n_total": 1101,
+  "n_classes_present": 6,
+  "classes_present": [
+    "Tomato___Bacterial_spot",
+    "Tomato___Early_blight",
+    "Tomato___Late_blight",
+    "Tomato___Leaf_Mold",
+    "Tomato___Target_Spot",
+    "Tomato___healthy"
+  ],
+  "accuracy": 0.21071752951861944,
+  "macro_f1": 0.1768869709962938,
+  "weighted_f1": 0.2018798704962385
+}

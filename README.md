@@ -224,6 +224,35 @@ label-free라는 전제와 모순된다** — 그래서 "SHOT은 원래 TENT보�
 썼다. epoch별 전체 수치는 `results/external/*/tiny_cnn_c_res96_bicubic_shot_masked_ep{1,3}_cw0.3/`에
 남겨뒀다.
 
+### 추가 검증: 모델을 더 줄이면 SHOT 과적합이 줄어들까 (tiny_cnn_c_lite)
+
+교수님 피드백: "SHOT이 epoch 2만 넘어도 과적합되는 건 모델 용량이 커서 그런 것 아니냐, 채널을 더
+줄여봐라(32→64→128→128 → 32→32→64→64)." 이 가설을 검증하려고 `tiny_cnn_c`와 같은 4블록
+Depthwise Separable 구조에 채널만 절반 수준으로 줄인 **tiny_cnn_c_lite**(파라미터 10,218개,
+tiny_cnn_c의 31,498개 대비 약 1/3)를 추가했다. 보간법도 피드백대로 bicubic 대신 기본값인
+bilinear로 96px에서 학습했다.
+
+| | tiny_cnn_c (31.5K) | tiny_cnn_c_lite (10.2K) |
+|---|---|---|
+| 내부 정확도 | 96.59% | 95.34% |
+| Taiwan SHOT(epoch=2) | **42.04%** | 37.90% |
+| Bangladesh SHOT(epoch=2) | **30.79%** | 21.07% |
+| PlantDoc SHOT(epoch=2) | 19.46%(F1 0.182) | **22.57%(F1 0.202)** |
+
+**결과는 가설과 절반만 맞았다.** epoch별 추이(`results/figures/shot_epoch_sensitivity_tiny_cnn_c_lite.png`)를
+보면:
+- **Bangladesh**는 가설대로 과적합이 완화됐다 — tiny_cnn_c는 epoch 2~3에서 꺾였는데, lite 모델은
+  epoch 5까지도 계속 좋아진다(16.4%→21.1%→23.3%→26.3%).
+- **PlantDoc은 반대로 더 빨리 과적합됐다** — lite 모델은 epoch 1에서 이미 정점(23.7%)을 찍고
+  epoch 2부터 바로 내려간다(22.6%→21.0%→18.2%). 모델 용량이 작아지니 pseudo-label 노이즈에
+  더 빨리 수렴해버리는 것으로 보인다.
+- Taiwan·Bangladesh는 작은 모델이 전반적으로 더 나쁘고(내부 정확도도 1.25%p 낮음), PlantDoc만
+  더 좋다 — "모델을 줄이면 전반적으로 낫다"는 결론은 내릴 수 없었다.
+
+**해석**: 모델 용량 축소가 SHOT의 pseudo-label 과적합을 줄이는 효과는 데이터셋의 클래스 수·불균형
+정도에 따라 방향이 달라, 일관된 해결책이 아니다. 과적합 억제는 모델 크기보다 `shot_epoch_sensitivity`
+분석에서처럼 **epoch 수를 고정하는 방식**으로 다루는 게 더 안정적이라는 기존 결론을 재확인한 셈이다.
+
 **남은 과제:** 지금은 seed42 단일 실행 결과다. `tiny_cnn_c`를 96px·bicubic 기준으로 seed123/2026에서
 추가 학습한 뒤 이 비교 전체를 3-seed로 재검증할 계획이다(seed123 학습은 진행 중).
 

@@ -14,12 +14,13 @@ from models.reference import (
     build_efficientnetb0,
     build_mobilenetv2,
 )
-from models.tiny_cnn import build_tiny_cnn_a, build_tiny_cnn_b, build_tiny_cnn_c
+from models.tiny_cnn import build_tiny_cnn_a, build_tiny_cnn_b, build_tiny_cnn_c, build_tiny_cnn_c_lite
 
 MODEL_BUILDERS = {
     "tiny_cnn_a": build_tiny_cnn_a,
     "tiny_cnn_b": build_tiny_cnn_b,
     "tiny_cnn_c": build_tiny_cnn_c,
+    "tiny_cnn_c_lite": build_tiny_cnn_c_lite,
     "baseline_cnn": build_baseline_cnn,
     "mobilenetv2": build_mobilenetv2,
     "efficientnetb0": build_efficientnetb0,
@@ -30,7 +31,7 @@ MODEL_BUILDERS = {
 TINY_INPUT_SHAPE = (3, 128, 128)
 REFERENCE_INPUT_SHAPE = (3, 224, 224)
 
-TINY_MODEL_NAMES = {"tiny_cnn_a", "tiny_cnn_b", "tiny_cnn_c"}
+TINY_MODEL_NAMES = {"tiny_cnn_a", "tiny_cnn_b", "tiny_cnn_c", "tiny_cnn_c_lite"}
 
 
 def input_shape_for(name: str) -> tuple[int, int, int]:

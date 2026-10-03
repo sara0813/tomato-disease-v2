@@ -24,7 +24,7 @@ if str(SRC_DIR) not in sys.path:
 from class_info import CLASS_NAMES  # noqa: E402
 from config import SEED, TEST_DIR, TINY_MODELS, internal_result_dir, model_path  # noqa: E402
 from dataset import INTERPOLATION_MODES, make_dataloader  # noqa: E402
-from models import MODEL_BUILDERS, input_shape_for  # noqa: E402
+from models import MODEL_BUILDERS, TINY_MODEL_NAMES, input_shape_for  # noqa: E402
 from utils.io import save_json  # noqa: E402
 
 
@@ -110,7 +110,7 @@ def evaluate_model(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="2단계: 내부 성능 평가")
-    parser.add_argument("--model", choices=TINY_MODELS, default=None, help="지정하면 이 모델만 평가 (기본: tiny_cnn 3종 전체)")
+    parser.add_argument("--model", choices=sorted(TINY_MODEL_NAMES), default=None, help="지정하면 이 모델만 평가 (기본: tiny_cnn 3종 전체)")
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument(
         "--img-size", type=int, default=None,
