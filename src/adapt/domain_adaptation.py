@@ -241,6 +241,33 @@ def _aps_refine(
     return temp_labels, confident_mask
 
 
+def _contrastive_loss(
+    feats: torch.Tensor, labels: torch.Tensor, confident_mask: torch.Tensor, temperature: float = 0.1
+) -> torch.Tensor:
+    """UPA의 CACL(Class-Aware Contrastive Learning, 식 8). anchor는 confident 샘플(APS의
+    confident_mask)만 쓰고, 양성쌍은 그 안에서 같은 pseudo-label을 가진 다른 샘플, 분모(음성쌍
+    포함)는 배치 전체(자기 자신 제외) — SupCon과 같은 형태지만 anchor·양성쌍을 신뢰 가능한
+    샘플로만 제한한 버전이다. feats는 별도 projection head 없이 L2-normalize만 적용한다."""
+    z = F.normalize(feats, dim=1)
+    sim = z @ z.T / temperature
+    sim = sim - sim.max(dim=1, keepdim=True).values.detach()  # 수치 안정화(softmax shift)
+    sim.fill_diagonal_(-1e9)
+    log_prob = sim - torch.logsumexp(sim, dim=1, keepdim=True)
+
+    same_class = labels.unsqueeze(0) == labels.unsqueeze(1)
+    both_confident = confident_mask.unsqueeze(0) & confident_mask.unsqueeze(1)
+    pos_mask = same_class & both_confident
+    pos_mask.fill_diagonal_(False)
+
+    pos_count = pos_mask.sum(dim=1)
+    anchor_mask = confident_mask & (pos_count > 0)
+    if not anchor_mask.any():
+        return feats.new_zeros(())
+
+    per_anchor_loss = -(pos_mask.float() * log_prob).sum(dim=1) / pos_count.clamp(min=1)
+    return per_anchor_loss[anchor_mask].mean()
+
+
 def apply_shot(
     model: nn.Module,
     target_loader,
@@ -255,6 +282,8 @@ def apply_shot(
     aps_iters: int = 2,
     aps_gamma: float = 0.6,
     class_balance: bool = False,
+    cacl: bool = False,
+    cacl_temperature: float = 0.1,
 ) -> nn.Module:
     """SHOT (Liang et al., ICML 2020) 축소 적용. source classifier(head.fc)는 고정하고
     feature extractor(features)만 업데이트한다 — TENT(BN affine만 조금 흔드는 가장 약한 적응)보다
@@ -271,7 +300,12 @@ def apply_shot(
     class_balance=True면 pseudo-label cross-entropy를 그 epoch의 pseudo-label 클래스 분포의
     역빈도로 가중한다 — Bangladesh처럼 pseudo-label 자체가 불균형하면(예: Leaf_Mold가 많고
     Target_Spot이 적으면) 다수 클래스가 gradient를 지배해 소수 클래스가 더 밀리는데, 이걸
-    완화하기 위한 것. APS와 독립적으로 켤 수 있다."""
+    완화하기 위한 것. APS와 독립적으로 켤 수 있다.
+
+    cacl=True면 UPA의 CACL(Class-Aware Contrastive Learning, _contrastive_loss 참고)을 더한다 —
+    APS의 confident_mask 안에서 같은 pseudo-label끼리 feature를 가깝게, 배치 내 다른 샘플과는
+    멀게 당기는 contrastive loss. 논문에서는 APS 위에 얹어 쓰는 구성이라(positive pair가
+    confident set 기준) aps=False면 전체 배치를 confident로 취급해 사실상 일반 SupCon이 된다."""
     allowed_idx = sorted({CLASS_NAMES.index(c) for c in EXTERNAL_PRESENT_CLASSES[dataset_key]})
     class_mask = class_mask_for(dataset_key, device)
     num_classes = len(CLASS_NAMES)
@@ -325,7 +359,8 @@ def apply_shot(
                 )
             else:
                 cls_loss = images.new_zeros(())
-            loss = im_loss + cls_loss_weight * cls_loss
+            cl_loss = _contrastive_loss(feats, batch_pseudo, batch_confident, cacl_temperature) if cacl else 0.0
+            loss = cl_loss + cls_loss_weight * cls_loss + im_loss  # UPA 식 10: L_CL + beta*L_CE + L_IM
             loss.backward()
             optimizer.step()
 
@@ -471,6 +506,8 @@ def run_one(
     shot_aps_iters: int = 2,
     shot_aps_gamma: float = 0.6,
     shot_class_balance: bool = False,
+    shot_cacl: bool = False,
+    shot_cacl_temperature: float = 0.1,
     eata_lr: float = 0.1,
     eata_e0_factor: float = 0.4,
     eata_d0: float = 0.05,
@@ -503,7 +540,7 @@ def run_one(
             model, loader, device, dataset_key, epochs=shot_epochs, lr=shot_lr, cls_loss_weight=shot_cls_weight,
             div_weight=div_weight if div_weight > 0 else 1.0,
             aps=shot_aps, aps_k=shot_aps_k, aps_iters=shot_aps_iters, aps_gamma=shot_aps_gamma,
-            class_balance=shot_class_balance,
+            class_balance=shot_class_balance, cacl=shot_cacl, cacl_temperature=shot_cacl_temperature,
         )
     elif method == "eata":
         fisher, anchor = _compute_fisher(model_name, base_run_name, seed, img_size, device)
@@ -528,6 +565,8 @@ def run_one(
         run_name += f"_aps{shot_aps_gamma:g}"
     if method == "shot" and shot_class_balance:
         run_name += "_cb"
+    if method == "shot" and shot_cacl:
+        run_name += "_cacl"
     if method == "eata" and (eata_e0_factor != 0.4 or eata_d0 != 0.05 or eata_fisher_alpha != 1.0):
         run_name += f"_e0{eata_e0_factor:g}_d0{eata_d0:g}_fa{eata_fisher_alpha:g}"
     metrics = evaluate_model_on_external(
@@ -592,6 +631,12 @@ def main() -> None:
         help="SHOT 전용: pseudo-label cross-entropy를 그 epoch의 pseudo-label 클래스 분포 역빈도로 "
         "가중한다 (Bangladesh처럼 pseudo-label 자체가 불균형할 때 다수 클래스 쏠림 완화용, APS와 독립적)",
     )
+    parser.add_argument(
+        "--shot-cacl", action="store_true",
+        help="SHOT 전용: UPA의 CACL(Class-Aware Contrastive Learning)을 추가한다 — APS confident "
+        "set 안에서 같은 pseudo-label끼리 feature를 당기는 contrastive loss (aps와 같이 쓰는 걸 권장)",
+    )
+    parser.add_argument("--shot-cacl-temperature", type=float, default=0.1, help="CACL 전용: contrastive loss temperature (논문 기본값 0.1)")
     parser.add_argument("--eata-lr", type=float, default=0.1, help="TENT/SHOT 기본값(1e-3)보다 훨씬 큼 — entropy 가중치·필터링으로 유효 gradient가 작아져서 같은 lr로는 거의 적응이 안 됨 (실측 확인)")
     parser.add_argument(
         "--eata-e0-factor", type=float, default=0.4,
@@ -627,6 +672,7 @@ def main() -> None:
                     shot_epochs=args.shot_epochs, shot_lr=args.shot_lr, shot_cls_weight=args.shot_cls_weight,
                     shot_aps=args.shot_aps, shot_aps_k=args.shot_aps_k, shot_aps_iters=args.shot_aps_iters,
                     shot_aps_gamma=args.shot_aps_gamma, shot_class_balance=args.shot_class_balance,
+                    shot_cacl=args.shot_cacl, shot_cacl_temperature=args.shot_cacl_temperature,
                     eata_lr=args.eata_lr, eata_e0_factor=args.eata_e0_factor, eata_d0=args.eata_d0,
                     eata_fisher_alpha=args.eata_fisher_alpha,
                 )
