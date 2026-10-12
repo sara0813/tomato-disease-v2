@@ -18,7 +18,7 @@
 | 5.6 | 해상도 × 리사이즈 보간법 튜닝 (tiny_cnn_c) | ✅ 완료 |
 | 6 | 최종 모델 선정 | ✅ 완료 — **tiny_cnn_c, 96px, bicubic 리사이즈** |
 | 7 | 웹 시스템 적용 | ✅ 프로토타입 완료 (`app/streamlit_app.py`, 모델 선택형) |
-| 8 | Domain Adaptation (AdaBN/TENT/SHOT/EATA/UPA/R-GV) | ✅ 완료 (3-seed 진행 중) — 마스킹+SHOT+APS 조합이 최종 권장안, 데이터셋별 심층 진단 포함 (아래 참고) |
+| 8 | Domain Adaptation (AdaBN/TENT/SHOT/EATA/UPA/R-GV) | ✅ 완료 (3-seed 검증 완료) — 마스킹+SHOT(epoch=2) 조합이 최종 권장안(APS는 3-seed에서 noise 범위로 기각), 데이터셋별 심층 진단 포함 (아래 참고) |
 
 진행 과정과 판단 근거를 상세히 정리한 슬라이드: `docs/CNN_토마토_병해분류_V2_진행보고.pptx`
 (2026-10-02 기준 28장 — 최종 모델 선정·seed 재현성·Domain Adaptation 최종 결과 반영)
@@ -192,28 +192,33 @@ TENT는 entropy를 마스킹된 클래스 안에서만 최소화하도록 고쳐
 완전 교체 대신 약하게 섞어도 Bangladesh·PlantDoc은 마스킹-only를 넘지 못했다 — BN 통계를 조금이라도
 건드리는 것 자체가 해로웠다는 뜻이다. Taiwan만 완전 교체(AdaBN)가 확실히 더 좋았다.
 
-### 최종 승자: SHOT + APS (pseudo-labeling + information maximization + 신뢰도 기반 선택)
+### 최종 승자: SHOT (pseudo-labeling + information maximization)
 
 Liang et al., *Do We Really Need to Access the Source Data? Source Hypothesis Transfer for
 Unsupervised Domain Adaptation*, ICML 2020. source classifier(`head.fc`)는 고정하고 feature
 extractor(`features`)만 미세조정한다 — 처음엔 분류기 softmax를 가중치 삼은 weighted k-means로
 클래스별 중심을 구해 pseudo-label을 할당(마스킹된 클래스 안에서만), 그 다음 pseudo-label
 cross-entropy + information-maximization(entropy 최소화 + batch 다양성 최대화) loss로 학습한다
-(`--shot-epochs`, `--shot-cls-weight`로 조정 가능, 아래 두 하이퍼파라미터 설명 참고). 여기에 아래
-"UPA의 APS" 절에서 설명할 신뢰도 기반 pseudo-label 재할당(`--shot-aps --shot-aps-gamma 1.0`)을
-더한 게 최종 구성이다.
+(`--shot-epochs`, `--shot-cls-weight`로 조정 가능, 아래 두 하이퍼파라미터 설명 참고). 아래
+"UPA의 APS" 절에서 설명할 신뢰도 기반 pseudo-label 재할당(`--shot-aps --shot-aps-gamma 1.0`)도
+시도했으나, **3-seed 검증 결과 seed42에서만 우연히 좋아 보였을 뿐 평균적으로는 개선이 아니었다**
+(아래 "3-seed 검증 결과" 절 참고) — 그래서 APS는 기본값에 포함하지 않고 선택적 옵션으로만 남긴다.
 
-| 데이터셋 | Source+마스킹 | AdaBN+마스킹 | SHOT+마스킹(epoch=2) | **SHOT+APS+마스킹(최종)** | EATA+마스킹 |
+아래 표는 seed42 단일 실행 기준이다(괄호의 F1은 seed42 기준). **3-seed 평균±표준편차는 바로 아래
+"3-seed 검증 결과" 절을 참고** — 표준편차가 커서(특히 Taiwan·Bangladesh ±5~6%p) 이 표의 개별
+수치를 "정확한 성능"으로 과신하면 안 된다.
+
+| 데이터셋 | Source+마스킹 | AdaBN+마스킹 | **SHOT+마스킹(epoch=2, 최종)** | SHOT+APS+마스킹 | EATA+마스킹 |
 |---|---|---|---|---|---|
-| Taiwan | 32.48% | 38.85% | 42.04% | **44.59%(F1 0.426)** | 35.35% |
+| Taiwan | 32.48% | 38.85% | **42.04%** | 44.59%(F1 0.426) | 35.35% |
 | Bangladesh | 22.34% | 15.71% | **30.79%** | 30.52%(거의 동일) | 20.89% |
-| PlantDoc | **20.31%** | 14.81% | 19.46%(F1 0.182) | 19.04%(F1 0.180) | 12.27% |
+| PlantDoc | 20.31% | 14.81% | **19.46%(F1 0.182)** | 19.04%(F1 0.180) | 12.27% |
 
 AdaBN/TENT와 달리 **SHOT은 3개 데이터셋 전부에서 collapse 없이 안정적으로 잘 됐다** — Taiwan·
 Bangladesh 둘 다 AdaBN을 앞서고, PlantDoc은 정확도도 가장 높고 macro F1도 전체 1위다. 데이터셋마다
 다른 방법을 골라야 했던 AdaBN/TENT와 달리 튜닝 없이 두루 통하는 유일한 방법이라, **class-restriction
-마스킹은 항상 적용 + 적응 방법은 SHOT(epoch=2)+APS(gamma=1.0)를 기본으로 사용**하는 것을 최종
-권장 파이프라인으로 정했다.
+마스킹은 항상 적용 + 적응 방법은 SHOT(epoch=2)만 기본으로 사용**하는 것을 최종 권장 파이프라인으로
+정했다.
 
 **epoch=2로 고정한 이유 (hyperparameter 선택의 공정성)**: SHOT은 epoch 수를 늘릴수록 더 많이
 학습하는데, `results/figures/shot_epoch_sensitivity.png`에서 보듯 **Taiwan(클래스 3개)은 epoch을
@@ -381,10 +386,29 @@ bilinear로 96px에서 학습했다.
 정도에 따라 방향이 달라, 일관된 해결책이 아니다. 과적합 억제는 모델 크기보다 `shot_epoch_sensitivity`
 분석에서처럼 **epoch 수를 고정하는 방식**으로 다루는 게 더 안정적이라는 기존 결론을 재확인한 셈이다.
 
-**3-seed 검증 진행 상황**: `tiny_cnn_c`(96px·bicubic)를 seed123/2026에서 추가 학습 완료(seed42와
-합쳐 3-seed 전부 확보). 위 DA 비교(source/AdaBN/SHOT/SHOT+APS)를 3-seed로 재평가하는 중이다 —
-완료되는 대로 평균±표준편차로 갱신할 예정이고, 그 전까지 이 섹션의 수치는 seed42 단일 실행
-기준임을 유의한다.
+### 3-seed 검증 결과: APS의 개선은 noise 범위 안이었다
+
+`tiny_cnn_c`(96px·bicubic)를 seed123/2026에서 추가 학습하고(seed42와 합쳐 3-seed), 위 DA 비교
+(Source/AdaBN/SHOT/SHOT+APS)를 전부 재평가했다.
+
+| 방법 | Taiwan | Bangladesh | PlantDoc |
+|---|---|---|---|
+| Source+마스킹 | 32.27% ±0.79 | 16.50% ±4.58 | 20.17% ±1.79 |
+| AdaBN+마스킹 | 35.24% ±2.57 | 15.14% ±2.44 | 16.83% ±1.80 |
+| SHOT+마스킹(epoch=2) | **37.58% ±5.86** | **24.28% ±5.62** | **19.75% ±1.40** |
+| SHOT+APS+마스킹 | 36.41% ±6.29 | 24.07% ±4.88 | 18.95% ±0.69 |
+
+(seed 42/123/2026 세 번 실행의 평균±표준편차, %p. 내부 테스트 정확도도 96.59/95.93/96.52%로
+seed마다 흔들려 ±0.30%p 변동이 있다.)
+
+seed42 단일 실행에서는 APS가 Taiwan을 42.04%→44.59%로 뚜렷하게 개선하는 것처럼 보였지만, **3-seed로
+보면 SHOT+APS가 SHOT보다 모든 데이터셋에서 평균이 오히려 살짝 낮다**(Taiwan -1.17%p, Bangladesh
+-0.21%p, PlantDoc -0.80%p) — 그 차이는 표준편차(5~6%p)보다 작아 noise 범위를 벗어나지 못한다.
+**seed42가 APS에 우연히 유리했던 것일 뿐, APS가 통계적으로 유의미한 개선이라는 근거는 없다.**
+그래서 **최종 권장 파이프라인을 "마스킹 항상 적용 + SHOT(epoch=2)"로 되돌린다** — APS는 "Taiwan
+같이 클래스가 적은 데이터셋에서는 추가해볼 만한 옵션"으로 남기되, 기본값으로 켜지 않는다. SHOT
+자체도 seed에 따라 표준편차가 5~6%p로 커서(특히 Taiwan·Bangladesh), 단일 seed 결과를 그대로
+"최종 성능"으로 보고하면 과대 해석이 될 수 있다는 점도 이번 검증에서 같이 확인했다.
 
 ### 연구 방향 재정리와 가설 검증
 
@@ -397,10 +421,13 @@ Domain Adaptation 부분은 "여러 방법을 똑같이 돌려서 비교"하는 
 
 - **가설 1**: 신뢰도 기반 pseudo-label 선택(UPA의 APS)은 클래스별 성능 손실을 줄이면서 적응
   성능을 개선할 수 있다.
-  → **Taiwan에서는 확인됨**(42.04%→44.59%, 데이터셋 전체 통틀어 최고 기록). **Bangladesh에서는
-  기각**— APS·class-balance·둘의 조합 전부 기존 SHOT(30.79%)을 못 넘었고, Late_blight↔Target_Spot
-  "교환" 패턴도 줄이지 못했다. 클래스가 적고(3개) 잘 갈리는 데이터셋에서만 신뢰도 기반 선택이
-  유효하다는 쪽으로 가설을 좁혀야 한다.
+  → **seed42 단일 실행에서는 확인되는 것처럼 보였으나(42.04%→44.59%), 3-seed 검증에서 기각**
+  — 위 "3-seed 검증 결과" 절에서 보듯 SHOT+APS의 3-seed 평균은 SHOT 단독보다 모든 데이터셋에서
+  오히려 약간 낮고, 그 차이는 seed 간 표준편차보다 작다. Bangladesh는 애초에 seed42에서도
+  기각이었다 — APS·class-balance·둘의 조합 전부 기존 SHOT(30.79%)을 못 넘었고, Late_blight↔
+  Target_Spot "교환" 패턴도 줄이지 못했다. **단일 seed에서 좋아 보였던 개선이 다중 seed 검증을
+  통과하지 못한 사례**로, 이 프로젝트 규모(300~1,100장)에서는 seed 1개만으로 하이퍼파라미터나
+  구성요소를 확정하면 안 된다는 교훈을 남겼다.
 - **가설 2**: 초기 feature 분포가 충분히 구분되지 않는 PlantDoc에서는 pseudo-label 정제보다 feature
   표현·정렬 개선이 더 중요하다.
   → **진단(오라클 실험)은 확인됨**: 정답을 줘도 PlantDoc은 전혀 개선되지 않아, 병목이 pseudo-label이
@@ -565,8 +592,9 @@ python src/evaluate/evaluate_external.py
 
 # Domain Adaptation (AdaBN/TENT/SHOT/EATA/R-GV) — 최종 모델에 적용, target label 미사용
 python src/adapt/domain_adaptation.py --model tiny_cnn_c --img-size 96 --interp bicubic --dataset all --method all --masked
-# 최종 권장 구성: SHOT + APS(gamma=1.0) — 마스킹이 방법 자체에 내장돼 있어 --masked 없어도 항상 적용됨
-python src/adapt/domain_adaptation.py --model tiny_cnn_c --img-size 96 --interp bicubic --dataset all --method shot --shot-aps --shot-aps-gamma 1.0
+# 최종 권장 구성: SHOT(epoch=2) — 마스킹이 방법 자체에 내장돼 있어 --masked 없어도 항상 적용됨
+# (APS는 3-seed 검증에서 noise 범위로 기각돼 기본값에서 제외; 옵션으로 쓰려면 --shot-aps --shot-aps-gamma 1.0 추가)
+python src/adapt/domain_adaptation.py --model tiny_cnn_c --img-size 96 --interp bicubic --dataset all --method shot
 
 # SHOT 심층 진단 — pseudo-label 품질 추적 + 클래스별 precision/recall (target label은 진단에만 사용)
 python src/adapt/shot_stage_analysis.py --dataset all --epochs 5
