@@ -1,0 +1,8 @@
+{
+  "dataset": "bangladesh_bbox",
+  "n_train": 770,
+  "n_eval": 331,
+  "source_acc_on_eval_split": 0.229607250755287,
+  "oracle_shot_acc_on_eval_split": 0.5861027190332326,
+  "note": "target label을 fine-tuning에 직접 사용한 진단 전용 상한 실험 — 정상 SFDA 결과 아님"
+}

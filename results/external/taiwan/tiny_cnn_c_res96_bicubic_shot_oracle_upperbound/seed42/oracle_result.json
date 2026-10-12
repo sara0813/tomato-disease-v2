@@ -1,0 +1,8 @@
+{
+  "dataset": "taiwan",
+  "n_train": 219,
+  "n_eval": 95,
+  "source_acc_on_eval_split": 0.3368421052631579,
+  "oracle_shot_acc_on_eval_split": 0.7052631578947368,
+  "note": "target label을 fine-tuning에 직접 사용한 진단 전용 상한 실험 — 정상 SFDA 결과 아님"
+}
