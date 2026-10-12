@@ -18,7 +18,7 @@
 | 5.6 | 해상도 × 리사이즈 보간법 튜닝 (tiny_cnn_c) | ✅ 완료 |
 | 6 | 최종 모델 선정 | ✅ 완료 — **tiny_cnn_c, 96px, bicubic 리사이즈** |
 | 7 | 웹 시스템 적용 | ✅ 프로토타입 완료 (`app/streamlit_app.py`, 모델 선택형) |
-| 8 | Domain Adaptation (AdaBN/TENT/SHOT/EATA) | ✅ 완료 (seed42 단일) — 마스킹+SHOT 조합이 최종 권장안 (아래 참고) |
+| 8 | Domain Adaptation (AdaBN/TENT/SHOT/EATA/UPA/R-GV) | ✅ 완료 (3-seed 진행 중) — 마스킹+SHOT+APS 조합이 최종 권장안, 데이터셋별 심층 진단 포함 (아래 참고) |
 
 진행 과정과 판단 근거를 상세히 정리한 슬라이드: `docs/CNN_토마토_병해분류_V2_진행보고.pptx`
 (2026-10-02 기준 28장 — 최종 모델 선정·seed 재현성·Domain Adaptation 최종 결과 반영)
@@ -192,26 +192,28 @@ TENT는 entropy를 마스킹된 클래스 안에서만 최소화하도록 고쳐
 완전 교체 대신 약하게 섞어도 Bangladesh·PlantDoc은 마스킹-only를 넘지 못했다 — BN 통계를 조금이라도
 건드리는 것 자체가 해로웠다는 뜻이다. Taiwan만 완전 교체(AdaBN)가 확실히 더 좋았다.
 
-### 최종 승자: SHOT (pseudo-labeling + information maximization)
+### 최종 승자: SHOT + APS (pseudo-labeling + information maximization + 신뢰도 기반 선택)
 
 Liang et al., *Do We Really Need to Access the Source Data? Source Hypothesis Transfer for
 Unsupervised Domain Adaptation*, ICML 2020. source classifier(`head.fc`)는 고정하고 feature
 extractor(`features`)만 미세조정한다 — 처음엔 분류기 softmax를 가중치 삼은 weighted k-means로
 클래스별 중심을 구해 pseudo-label을 할당(마스킹된 클래스 안에서만), 그 다음 pseudo-label
 cross-entropy + information-maximization(entropy 최소화 + batch 다양성 최대화) loss로 학습한다
-(`--shot-epochs`, `--shot-cls-weight`로 조정 가능, 아래 두 하이퍼파라미터 설명 참고).
+(`--shot-epochs`, `--shot-cls-weight`로 조정 가능, 아래 두 하이퍼파라미터 설명 참고). 여기에 아래
+"UPA의 APS" 절에서 설명할 신뢰도 기반 pseudo-label 재할당(`--shot-aps --shot-aps-gamma 1.0`)을
+더한 게 최종 구성이다.
 
-| 데이터셋 | Source+마스킹 | AdaBN+마스킹 | **SHOT+마스킹(epoch=2)** | EATA+마스킹 |
-|---|---|---|---|---|
-| Taiwan | 32.48% | **38.85%** | 42.04% | 35.35% |
-| Bangladesh | 22.34% | 15.71% | **30.79%** | 20.89% |
-| PlantDoc | **20.31%** | 14.81% | 19.46% (macro F1 **0.182**, 전체 1위) | 12.27% |
+| 데이터셋 | Source+마스킹 | AdaBN+마스킹 | SHOT+마스킹(epoch=2) | **SHOT+APS+마스킹(최종)** | EATA+마스킹 |
+|---|---|---|---|---|---|
+| Taiwan | 32.48% | 38.85% | 42.04% | **44.59%(F1 0.426)** | 35.35% |
+| Bangladesh | 22.34% | 15.71% | **30.79%** | 30.52%(거의 동일) | 20.89% |
+| PlantDoc | **20.31%** | 14.81% | 19.46%(F1 0.182) | 19.04%(F1 0.180) | 12.27% |
 
 AdaBN/TENT와 달리 **SHOT은 3개 데이터셋 전부에서 collapse 없이 안정적으로 잘 됐다** — Taiwan·
 Bangladesh 둘 다 AdaBN을 앞서고, PlantDoc은 정확도도 가장 높고 macro F1도 전체 1위다. 데이터셋마다
 다른 방법을 골라야 했던 AdaBN/TENT와 달리 튜닝 없이 두루 통하는 유일한 방법이라, **class-restriction
-마스킹은 항상 적용 + 적응 방법은 SHOT(epoch=2)을 기본으로 사용**하는 것을 최종 권장 파이프라인으로
-정했다.
+마스킹은 항상 적용 + 적응 방법은 SHOT(epoch=2)+APS(gamma=1.0)를 기본으로 사용**하는 것을 최종
+권장 파이프라인으로 정했다.
 
 **epoch=2로 고정한 이유 (hyperparameter 선택의 공정성)**: SHOT은 epoch 수를 늘릴수록 더 많이
 학습하는데, `results/figures/shot_epoch_sensitivity.png`에서 보듯 **Taiwan(클래스 3개)은 epoch을
@@ -223,6 +225,105 @@ label-free라는 전제와 모순된다** — 그래서 "SHOT은 원래 TENT보�
 적응이라는 프로젝트 기조상 최소한만 늘린다"는 사전 기준으로 3개 데이터셋 공통 epoch=2를 고정값으로
 썼다. epoch별 전체 수치는 `results/external/*/tiny_cnn_c_res96_bicubic_shot_masked_ep{1,3}_cw0.3/`에
 남겨뒀다.
+
+### 심층 진단: SHOT은 정확히 어디서 성공·실패하는가
+
+epoch 단위 비교만으로는 "왜" 성공/실패하는지 알 수 없어서, target label을 **적응에는 전혀 안 쓰고
+진단에만** 쓰는 세 가지 분석을 추가했다(`src/adapt/shot_stage_analysis.py`,
+`src/adapt/shot_oracle_upperbound.py`).
+
+**① pseudo-label 품질 추적**: epoch마다 pseudo-label 정확도와 그걸로 학습한 뒤 모델 정확도를
+같이 기록했다. Taiwan은 pseudo-label 정확도가 epoch이 지날수록 계속 올라가고(34%→53%) 모델
+정확도도 같이 올라간다 — "좋은 pseudo-label → 좋은 적응"의 선순환. Bangladesh는 epoch 2~3 근처에서
+둘 다 같이 정체된다. **PlantDoc은 pseudo-label 정확도가 처음부터 끝까지 19% 근처에서 평평하다** —
+더 학습해도 pseudo-label 품질 자체가 안 올라간다.
+
+**② 초기 클래스별 precision/recall**: source softmax와 SHOT의 첫 pseudo-label을 클래스별로 비교했다.
+- **Taiwan**: "healthy"가 source·클러스터링 둘 다에서 precision·recall **0%** — 314장 중 Late_blight로
+  308장이 쏠리는 degenerate 상태이고, healthy 진짜 이미지 대부분이 거기 흡수됐다. SHOT을 거쳐도
+  healthy 예측은 1장→10장으로 찔끔 늘 뿐 여전히 사각지대다.
+- **Bangladesh**: SHOT 클러스터링이 "교환"을 일으킨다 — 원래 한 번도 예측 안 되던 Leaf_Mold(recall
+  0%→25%)·Target_Spot(0%→43%)을 찾아내는 대신, 원래 잘 맞추던 healthy(recall 12%→20%는 오히려
+  나아짐이지만)·Late_blight(recall 60%→22%)가 깎인다. 정확히는 "Late_blight 쏠림이 Target_Spot
+  쏠림으로 옮겨간 것"에 더 가깝다(Target_Spot 예측 개수 0→211장, 진짜는 47장뿐이라 대부분 틀림).
+- **PlantDoc**: source 단계에서 이미 Bacterial_spot·Leaf_Mold·healthy 3개 클래스가 precision·recall
+  **0%**(완전한 사각지대)다. SHOT 클러스터링을 거치면 이 3개는 0%에서는 벗어나지만, 원래 잘하던
+  Early_blight·Late_blight·Septoria의 recall이 전부 거의 반토막난다 — 득실이 상쇄돼 전체 정확도가
+  epoch을 늘려도 거의 안 움직이는 이유다.
+
+**③ Oracle 상한 실험** (`shot_oracle_upperbound.py`, 진단 전용 — 학습/평가 이미지는 stratified
+70/30으로 분리): pseudo-label 대신 **실제 target 정답**으로 SHOT을 fine-tuning하면 어디까지
+가능한지 측정했다.
+
+| 데이터셋 | Source(eval split) | **Oracle(정답으로 학습)** |
+|---|---|---|
+| Taiwan | 33.68% | **70.53%** (+36.9%p) |
+| Bangladesh | 22.96% | **58.61%** (+35.7%p) |
+| PlantDoc | 23.47% | **23.47%** (변화 없음) |
+
+Taiwan·Bangladesh는 정답만 있으면 정확도가 2배 이상 뛴다 — **pseudo-label 품질이 핵심 병목**이라는
+뜻이다. **PlantDoc은 정답을 줘도 전혀 개선되지 않았다** — train 정확도는 19%→27%로 분명히 오르는데
+(학습 자체는 정상, gradient·loss 확인 완료) eval 정확도는 그대로라 **train 데이터에만 과적합되고
+새 이미지로 전혀 일반화가 안 된다는 뜻**이다. 이건 pseudo-label 문제가 아니라 **tiny_cnn_c의 feature
+extractor가 PlantDoc의 시각적 다양성을 구분할 표현력 자체가 부족하다**는 신호로 해석한다.
+
+### 추가 시도: UPA의 APS — Taiwan만 개선, CACL은 실패
+
+**UPA**(Chen et al., *Uncertainty-Aware Pseudo-Label Filtering for Source-Free Unsupervised Domain
+Adaptation*, Neurocomputing 2024, 공식 코드 [`chenxi52/UPA`](https://github.com/chenxi52/UPA))의
+두 구성요소를 분리해서 시도했다.
+
+**APS (Adaptive Pseudo-label Selection)**: 각 샘플의 K-최근접 이웃(K=4, 코사인 유사도)이 투표해
+pseudo-label을 다듬고(2회 반복), 클래스별 confidence 상위 gamma%만 cross-entropy에 반영한다.
+논문 기본값(gamma=0.6, 40% 필터링)은 오히려 SHOT보다 나빴다 — Taiwan에서 gamma를 0.6→1.0으로
+스윕해보니 **필터링을 아예 끄고 KNN 라벨 재할당만 쓴 gamma=1.0이 최고**였다(42.04%→44.59%). 대규모
+벤치마크용 필터링 강도가 300~1,100장 규모의 우리 데이터엔 너무 공격적이었던 것 — EATA의 lr
+재조정과 같은 패턴이다. Bangladesh/PlantDoc은 APS를 켜도 거의 중립이었다.
+
+**CACL (Class-Aware Contrastive Learning)**: APS의 confident set 안에서 같은 pseudo-label끼리
+feature를 가깝게, 배치 내 다른 샘플과는 멀게 당기는 contrastive loss(temperature=0.1). Taiwan은
+learning rate를 100배 낮춰도(1e-5) APS 단독(44.59%)보다 계속 나빴고(33~38%대), Bangladesh·
+PlantDoc은 중립이었다. **고정된 classifier(`head.fc`)와 contrastive loss로 움직이는 feature space가
+구조적으로 안 맞는 것으로 보인다** — CACL은 최종 파이프라인에서 제외했다.
+
+**Bangladesh의 trade-off를 줄여보려는 추가 시도**(class 역빈도 가중치, APS+class-balance 조합,
+epoch 3/5, cls_weight=1.0)도 전부 기존 SHOT(30.79%)을 못 넘었다 — Target_Spot recall은
+51%→57%로 개선됐지만 그 대가로 Bacterial_spot이 14%→4%로 나빠져 macro F1은 오히려 소폭
+하락했다. **Bangladesh는 pseudo-label을 미세조정하는 접근으로는 한계에 도달한 것으로 보인다.**
+
+### 추가 시도: R-GV (CVPR 2025, 포스터 기반 근사 구현) — SHOT+APS를 못 넘음
+
+Zhu et al., *Revisiting Source-Free Domain Adaptation: Insights into Representativeness,
+Generalization, and Variety*, CVPR 2025. PlantDoc의 "표현력 부족" 문제를 겨냥해 시도했다.
+**이 논문은 공식 코드가 없고 본문 PDF도 CVF/ResearchGate 둘 다 접근이 막혀 있어서, 공식 CVPR
+포스터에 공개된 수준(① confidence+coverage 기반 progressive sample selection ② target 내부
+semantic alignment ③ 여러 라운드 반복)만으로 재구성한 근사 구현이다 — 정확한 논문 수식과는
+다를 수 있다.**
+
+semantic alignment(confident/unconfident 그룹 간 배치 단위 feature 평균 거리 최소화)를 켜면
+Taiwan·Bangladesh가 마스킹-only보다도 나빠졌다 — CACL과 똑같은 패턴(고정된 classifier와 움직이는
+feature space의 구조적 불일치)이다. alignment를 끄고 progressive selection만 남긴 최선의 설정으로도:
+
+| 데이터셋 | SHOT+APS(최종) | R-GV(alignment 제외, 근사) |
+|---|---|---|
+| Taiwan | **44.59%** | 36.94% |
+| Bangladesh | **30.79%** | 30.61%(거의 동일) |
+| PlantDoc | **19.46%** | 17.07%(더 나쁨) |
+
+어디서도 SHOT+APS를 넘지 못했다. PlantDoc에서조차 개선이 없었다는 점은 오라클 실험 결과(정답을
+줘도 안 변함)와 일관된다 — **표현력 자체가 부족한 상황에서는 pseudo-label을 다듬는 방향이든,
+feature를 재정렬하는 방향이든, 우리가 시도한 방식으로는 돌파가 안 됐다.**
+
+### 검토만 하고 구현은 보류: UCon-SFDA
+
+Xu et al., *Revisiting Source-Free Domain Adaptation: A New Perspective via Uncertainty Control*
+(UCon-SFDA), ICLR 2025, 공식 코드 [`xugezheng/UCon_SFDA`](https://github.com/xugezheng/UCon_SFDA).
+논문 본문(4장)까지 확인했는데, distributionally-robust-optimization 기반 contrastive loss(식 6~7,
+k-NN 양성쌍 + augmentation 기반 "가짜 음성쌍" dispersion control) 위에 partial-label 지도까지
+더한 구조로, **CACL과 근본적으로 같은 계열(contrastive loss)**이다. CACL이 고정된 classifier와
+구조적으로 안 맞아 실패했던 걸 감안하면 UCon-SFDA도 같은 문제를 겪을 가능성이 높고, 하이퍼파라미터도
+훨씬 많아(λ_CL, λ_DC, λ_PL, τ, K_PL) 구현·재조정에 드는 시간 대비 성공 가능성이 낮다고 판단해
+**구현하지 않고 이 판단 근거만 기록**으로 남긴다.
 
 ### 추가 시도: EATA (TENT의 최신 후속작) — SHOT을 넘지 못함
 
@@ -280,8 +381,41 @@ bilinear로 96px에서 학습했다.
 정도에 따라 방향이 달라, 일관된 해결책이 아니다. 과적합 억제는 모델 크기보다 `shot_epoch_sensitivity`
 분석에서처럼 **epoch 수를 고정하는 방식**으로 다루는 게 더 안정적이라는 기존 결론을 재확인한 셈이다.
 
-**남은 과제:** 지금은 seed42 단일 실행 결과다. `tiny_cnn_c`를 96px·bicubic 기준으로 seed123/2026에서
-추가 학습한 뒤 이 비교 전체를 3-seed로 재검증할 계획이다(seed123 학습은 진행 중).
+**3-seed 검증 진행 상황**: `tiny_cnn_c`(96px·bicubic)를 seed123/2026에서 추가 학습 완료(seed42와
+합쳐 3-seed 전부 확보). 위 DA 비교(source/AdaBN/SHOT/SHOT+APS)를 3-seed로 재평가하는 중이다 —
+완료되는 대로 평균±표준편차로 갱신할 예정이고, 그 전까지 이 섹션의 수치는 seed42 단일 실행
+기준임을 유의한다.
+
+### 연구 방향 재정리와 가설 검증
+
+지금까지의 진단(심층 진단 절)과 추가 시도(UPA/R-GV/EATA/UCon-SFDA 절) 결과를 바탕으로, 이 프로젝트의
+Domain Adaptation 부분은 "여러 방법을 똑같이 돌려서 비교"하는 단계를 넘어 **데이터셋마다 다른
+실패 원인에 맞춰 다른 개선 전략을 검증**하는 단계로 재정의한다.
+
+> **연구 주제**: 경량 CNN 기반 토마토 병해 분류에서 Pseudo-label 신뢰성과 특징 표현 개선을 통한
+> Source-Free Domain Adaptation 성능 향상
+
+- **가설 1**: 신뢰도 기반 pseudo-label 선택(UPA의 APS)은 클래스별 성능 손실을 줄이면서 적응
+  성능을 개선할 수 있다.
+  → **Taiwan에서는 확인됨**(42.04%→44.59%, 데이터셋 전체 통틀어 최고 기록). **Bangladesh에서는
+  기각**— APS·class-balance·둘의 조합 전부 기존 SHOT(30.79%)을 못 넘었고, Late_blight↔Target_Spot
+  "교환" 패턴도 줄이지 못했다. 클래스가 적고(3개) 잘 갈리는 데이터셋에서만 신뢰도 기반 선택이
+  유효하다는 쪽으로 가설을 좁혀야 한다.
+- **가설 2**: 초기 feature 분포가 충분히 구분되지 않는 PlantDoc에서는 pseudo-label 정제보다 feature
+  표현·정렬 개선이 더 중요하다.
+  → **진단(오라클 실험)은 확인됨**: 정답을 줘도 PlantDoc은 전혀 개선되지 않아, 병목이 pseudo-label이
+  아니라 feature 표현력이라는 진단 자체는 맞았다. **그런데 그 처방(R-GV의 semantic alignment, CACL의
+  contrastive loss)은 둘 다 실패**했다 — 원인이 진단대로 "표현력 부족"이라 해도, 우리가 시도한
+  "feature를 직접 재정렬/contrastive로 당기는" 방식은 고정된 source classifier와 구조적으로
+  맞지 않았다. 진단은 맞고 처방은 틀렸다는, 구분해서 봐야 하는 결과다.
+
+이 프로젝트 규모(경량 CNN, 수백~천 장 target, 파라미터 1~3만 개)에서 반복적으로 확인된 메타
+패턴: **AdaBN 완전 교체, EATA의 entropy 필터, APS의 필터링, SHOT의 적응 epoch까지 — 대규모
+벤치마크(ImageNet급 continual TTA, Office-Home 등)를 기준으로 설계된 하이퍼파라미터/구성요소는
+거의 전부 재조정이 필요했고, 일부(완전 교체형 통계 변경, contrastive loss 기반 feature 정렬)는
+재조정으로도 못 고치고 아예 빼야 했다.** 모델과 데이터가 작을수록 "최신 방법일수록 좋다"보다
+"그 방법이 가정한 스케일이 내 상황과 맞는가"를 먼저 따져야 한다는 것이, 이번 Domain Adaptation
+전체 과정에서 얻은 가장 일반적인 교훈이다.
 
 ## 데이터셋
 
@@ -310,7 +444,7 @@ bilinear로 96px에서 학습했다.
 | 5 | 외부 데이터 평가 | `src/evaluate/evaluate_external.py` | `results/external/` |
 | 6 | 최종 모델 선정 — tiny_cnn_c/96px/bicubic | `src/train/train_model.py --img-size --interp` | `results/figures/*_interp_matrix_tiny_cnn_c.png` |
 | 7 | 시스템 적용 | `app/streamlit_app.py` | 웹 프로토타입 (모델 선택형) |
-| 8 | Domain Adaptation (AdaBN/TENT/SHOT/EATA) | `src/adapt/domain_adaptation.py` | `results/external/*/*_adabn*/`, `*_tent*/`, `*_shot_masked/`, `*_eata_masked/` |
+| 8 | Domain Adaptation (AdaBN/TENT/SHOT/EATA/UPA/R-GV) | `src/adapt/domain_adaptation.py`, `shot_stage_analysis.py`, `shot_oracle_upperbound.py` | `results/external/*/*_{adabn,tent,shot,eata,rgv}*masked*/` |
 
 **Corruption은 학습 증강이 아니라 평가용 변형이다.** 밝기 · 그림자 · 반사 · 블러 · 노이즈 · 가림
 6개 조건 × 약/중/강 3단계로 **테스트 이미지만** 변형해 모델별 성능 저하율을 비교한다. 학습 데이터에는
@@ -379,7 +513,7 @@ tomato_V2/
 │   ├── corruption/       # 변형 정의(6조건×3단계) · 변형셋 생성
 │   ├── train/            # train_model.py — 모델 이름 인자 하나로 통일, --img-size/--interp 튜닝, 체크포인트 재개
 │   ├── evaluate/         # 내부 · 효율 · corruption · 외부 평가
-│   ├── adapt/            # domain_adaptation.py — AdaBN/TENT/SHOT/EATA + class-restriction 마스킹 (source-free, target label 미사용)
+│   ├── adapt/            # domain_adaptation.py(AdaBN/TENT/SHOT/EATA/UPA/R-GV + 마스킹) + shot_stage_analysis.py/shot_oracle_upperbound.py(진단 전용)
 │   ├── summary/          # 종합 비교표 (V2 실측 + V1 인용, 판단 없음)
 │   ├── visualize/        # 결과 그래프 (results/figures/*.png)
 │   └── utils/            # 시드 · 입출력
@@ -429,10 +563,15 @@ python src/evaluate/measure_efficiency.py
 python src/evaluate/evaluate_corruption.py
 python src/evaluate/evaluate_external.py
 
-# Domain Adaptation (AdaBN/TENT/SHOT/EATA) — 최종 모델에 적용, target label 미사용
+# Domain Adaptation (AdaBN/TENT/SHOT/EATA/R-GV) — 최종 모델에 적용, target label 미사용
 python src/adapt/domain_adaptation.py --model tiny_cnn_c --img-size 96 --interp bicubic --dataset all --method all --masked
-# SHOT만 (마스킹이 방법 자체에 내장돼 있어 --masked 없어도 항상 적용됨)
-python src/adapt/domain_adaptation.py --model tiny_cnn_c --img-size 96 --interp bicubic --dataset all --method shot
+# 최종 권장 구성: SHOT + APS(gamma=1.0) — 마스킹이 방법 자체에 내장돼 있어 --masked 없어도 항상 적용됨
+python src/adapt/domain_adaptation.py --model tiny_cnn_c --img-size 96 --interp bicubic --dataset all --method shot --shot-aps --shot-aps-gamma 1.0
+
+# SHOT 심층 진단 — pseudo-label 품질 추적 + 클래스별 precision/recall (target label은 진단에만 사용)
+python src/adapt/shot_stage_analysis.py --dataset all --epochs 5
+# SHOT oracle 상한 실험 — pseudo-label 대신 실제 정답으로 학습(진단 전용, 정상 SFDA 결과 아님)
+python src/adapt/shot_oracle_upperbound.py --dataset all
 
 # 종합 + 시각화
 python src/summary/make_summary.py
