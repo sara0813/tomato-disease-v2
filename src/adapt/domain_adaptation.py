@@ -39,7 +39,7 @@ from evaluate.evaluate_external import evaluate_model_on_external  # noqa: E402
 from models import MODEL_BUILDERS, input_shape_for  # noqa: E402
 from utils.seed import set_seed  # noqa: E402
 
-METHODS = ("source", "adabn", "tent", "shot", "eata")
+METHODS = ("source", "adabn", "tent", "shot", "eata", "rgv")
 
 
 def class_mask_for(dataset_key: str, device) -> torch.Tensor:
@@ -482,6 +482,99 @@ def apply_eata(
     return model
 
 
+def apply_rgv(
+    model: nn.Module,
+    target_loader,
+    device,
+    dataset_key: str,
+    rounds: int = 3,
+    lr: float = 1e-3,
+    cls_loss_weight: float = 0.3,
+    align_weight: float = 0.3,
+    div_weight: float = 1.0,
+    start_ratio: float = 0.3,
+    end_ratio: float = 0.9,
+) -> nn.Module:
+    """R-GV — Zhu et al., *Revisiting Source-Free Domain Adaptation: Insights into
+    Representativeness, Generalization, and Variety*, CVPR 2025의 "영감을 받은(inspired)" 버전.
+
+    **중요한 제약**: 이 논문은 공식 코드가 공개돼 있지 않고, 본문 PDF도 접근이 막혀 있어서
+    (CVF/ResearchGate 403) 공식 CVPR 포스터에 나온 수준의 정보만으로 구현했다 — 정확한
+    sample selection/semantic alignment 수식은 논문 본문에만 있어 확인 못 했다. 즉 이건
+    "R-GV 논문의 충실한 재현"이 아니라 "포스터에 공개된 3단계 구조(Representativeness/
+    Generalization/Variety)를 우리 식으로 구현한 근사판"이다 — 보고서에도 이렇게 명시해야 한다.
+
+    포스터에서 확인한 구조:
+    1) Sample Selection (대표성+다양성): 매 라운드 pseudo-label을 다시 구하고, confidence
+       상위 ratio%를 신뢰 가능한 집합(D_t,l)으로 고른다. ratio는 start_ratio→end_ratio로
+       라운드가 지날수록 커진다(Variety — 처음엔 확실한 것만, 점점 더 많은 샘플을 끌어들임).
+       SHOT의 masking처럼 클래스별로 선별해서, 샘플 수가 적은 클래스도(Taiwan의 healthy처럼)
+       최소 1개는 포함되게 한다 — 이게 "분포 커버리지"에 해당.
+    2) Semantic Alignment (일반화): D_t,l과 D_t,u(나머지) 사이의 feature 평균 거리를
+       최소화한다(배치 단위 MMD 축소판) — source 데이터 없이 target 내부에서만 정렬한다는
+       점에서 완전히 source-free다.
+    3) Progressive: 위 두 단계를 여러 라운드 반복하며 신뢰 집합을 키워간다.
+    """
+    allowed_idx = sorted({CLASS_NAMES.index(c) for c in EXTERNAL_PRESENT_CLASSES[dataset_key]})
+    class_mask = class_mask_for(dataset_key, device)
+    num_classes = len(CLASS_NAMES)
+
+    for p in model.parameters():
+        p.requires_grad_(False)
+    for p in model.features.parameters():
+        p.requires_grad_(True)
+    optimizer = torch.optim.Adam(model.features.parameters(), lr=lr)
+
+    for r in range(rounds):
+        ratio = start_ratio + (end_ratio - start_ratio) * (r / max(rounds - 1, 1))
+        pseudo_labels, pl_feats = _shot_pseudo_labels(
+            model, target_loader, device, allowed_idx, class_mask, num_classes, return_feats=True
+        )
+        with torch.no_grad():
+            pl_logits = model.head.fc(pl_feats.to(device)) + class_mask
+            pl_conf = pl_logits.softmax(dim=1).gather(1, pseudo_labels.to(device).unsqueeze(1)).squeeze(1).cpu()
+
+        confident_mask = torch.zeros_like(pseudo_labels, dtype=torch.bool)
+        for c in allowed_idx:
+            class_idx = (pseudo_labels == c).nonzero(as_tuple=True)[0]
+            if len(class_idx) == 0:
+                continue
+            n_keep = max(1, int(round(len(class_idx) * ratio)))  # 작은 클래스도 최소 1개는 포함(Variety)
+            top_local = pl_conf[class_idx].topk(min(n_keep, len(class_idx))).indices
+            confident_mask[class_idx[top_local]] = True
+
+        model.train()
+        idx = 0
+        for images, _ in target_loader:
+            images = images.to(device)
+            bsz = images.size(0)
+            batch_pseudo = pseudo_labels[idx: idx + bsz].to(device)
+            batch_confident = confident_mask[idx: idx + bsz].to(device)
+            idx += bsz
+
+            optimizer.zero_grad()
+            feats = model.head.pool(model.features(images)).flatten(1)
+            logits = model.head.fc(feats) + class_mask
+            probs = logits.softmax(dim=1)
+
+            im_loss = _entropy_of(probs).mean() - div_weight * _entropy_of(probs.mean(dim=0))
+            if batch_confident.any():
+                cls_loss = F.cross_entropy(logits[batch_confident], batch_pseudo[batch_confident])
+            else:
+                cls_loss = images.new_zeros(())
+            if batch_confident.any() and (~batch_confident).any():
+                align_loss = (feats[batch_confident].mean(dim=0) - feats[~batch_confident].mean(dim=0)).pow(2).sum()
+            else:
+                align_loss = images.new_zeros(())
+
+            loss = im_loss + cls_loss_weight * cls_loss + align_weight * align_loss
+            loss.backward()
+            optimizer.step()
+
+    model.eval()
+    return model
+
+
 def run_one(
     method: str,
     model_name: str,
@@ -512,18 +605,24 @@ def run_one(
     eata_e0_factor: float = 0.4,
     eata_d0: float = 0.05,
     eata_fisher_alpha: float = 1.0,
+    rgv_rounds: int = 3,
+    rgv_lr: float = 1e-3,
+    rgv_cls_weight: float = 0.3,
+    rgv_align_weight: float = 0.3,
+    rgv_start_ratio: float = 0.3,
+    rgv_end_ratio: float = 0.9,
 ) -> dict:
     """masked=True면 class_mask_for()로 target에 없는 클래스를 가린다.
     TENT는 적응 단계(entropy 손실)에도 마스크를 넣어 mask-aware하게 적응하고,
     AdaBN은 통계 재계산 자체가 loss-free라 적응 단계는 그대로 두고 최종 평가에만 마스크를 적용한다.
-    SHOT·EATA는 마스킹이 방법 자체에 내장돼 있어 masked 인자와 무관하게 항상 적용된다.
+    SHOT·EATA·R-GV는 마스킹이 방법 자체에 내장돼 있어 masked 인자와 무관하게 항상 적용된다.
 
     div_weight: TENT 전용, >0이면 diversity 정규화(collapse 방지)를 추가한다.
     adabn_blend_momentum: AdaBN 전용, 주면 완전 교체 대신 해당 momentum으로 source/target 통계를 블렌딩한다."""
     set_seed(seed)
     model = load_base_model(model_name, base_run_name, seed, img_size, device)
     loader = make_external_dataloader(data_dir, img_size, batch_size, interpolation=INTERPOLATION_MODES[interp])
-    masked = masked or method in ("shot", "eata")
+    masked = masked or method in ("shot", "eata", "rgv")
     class_mask = class_mask_for(dataset_key, device) if masked else None
 
     t0 = time.time()
@@ -548,6 +647,11 @@ def run_one(
             model, loader, device, fisher, anchor, lr=eata_lr, e0_factor=eata_e0_factor, d0=eata_d0,
             fisher_alpha=eata_fisher_alpha, class_mask=class_mask,
         )
+    elif method == "rgv":
+        model = apply_rgv(
+            model, loader, device, dataset_key, rounds=rgv_rounds, lr=rgv_lr, cls_loss_weight=rgv_cls_weight,
+            align_weight=rgv_align_weight, start_ratio=rgv_start_ratio, end_ratio=rgv_end_ratio,
+        )
     else:
         raise ValueError(f"알 수 없는 method: {method}")
     adapt_time = time.time() - t0
@@ -569,6 +673,8 @@ def run_one(
         run_name += "_cacl"
     if method == "eata" and (eata_e0_factor != 0.4 or eata_d0 != 0.05 or eata_fisher_alpha != 1.0):
         run_name += f"_e0{eata_e0_factor:g}_d0{eata_d0:g}_fa{eata_fisher_alpha:g}"
+    if method == "rgv" and (rgv_rounds != 3 or rgv_align_weight != 0.3):
+        run_name += f"_r{rgv_rounds}_aw{rgv_align_weight:g}"
     metrics = evaluate_model_on_external(
         model, model_name, run_name, dataset_key, data_dir, img_size, interp, seed, device, batch_size,
         class_mask=class_mask,
@@ -650,6 +756,15 @@ def main() -> None:
         "--eata-fisher-alpha", type=float, default=1.0,
         help="EATA 전용: anti-forgetting 정규화 가중치 (source test셋 Fisher information 기반, 크면 원본 가중치에서 덜 움직임)",
     )
+    parser.add_argument(
+        "--rgv-rounds", type=int, default=3,
+        help="R-GV 전용(포스터 기반 근사 구현, 논문 본문 미확인): progressive 라운드 수",
+    )
+    parser.add_argument("--rgv-lr", type=float, default=1e-3)
+    parser.add_argument("--rgv-cls-weight", type=float, default=0.3, help="R-GV 전용: confident set pseudo-label CE 가중치")
+    parser.add_argument("--rgv-align-weight", type=float, default=0.3, help="R-GV 전용: D_t,l/D_t,u 간 semantic alignment 가중치")
+    parser.add_argument("--rgv-start-ratio", type=float, default=0.3, help="R-GV 전용: 1라운드에서 confident로 고르는 클래스별 비율")
+    parser.add_argument("--rgv-end-ratio", type=float, default=0.9, help="R-GV 전용: 마지막 라운드에서 confident로 고르는 클래스별 비율")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -675,6 +790,9 @@ def main() -> None:
                     shot_cacl=args.shot_cacl, shot_cacl_temperature=args.shot_cacl_temperature,
                     eata_lr=args.eata_lr, eata_e0_factor=args.eata_e0_factor, eata_d0=args.eata_d0,
                     eata_fisher_alpha=args.eata_fisher_alpha,
+                    rgv_rounds=args.rgv_rounds, rgv_lr=args.rgv_lr, rgv_cls_weight=args.rgv_cls_weight,
+                    rgv_align_weight=args.rgv_align_weight, rgv_start_ratio=args.rgv_start_ratio,
+                    rgv_end_ratio=args.rgv_end_ratio,
                 )
             )
 

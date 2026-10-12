@@ -1,0 +1,23 @@
+{
+  "model": "tiny_cnn_c",
+  "run_name": "tiny_cnn_c_res96_bicubic_rgv_masked_r3_aw0",
+  "img_size": [
+    96,
+    96
+  ],
+  "interp": "bicubic",
+  "dataset": "bangladesh_bbox",
+  "n_total": 1101,
+  "n_classes_present": 6,
+  "classes_present": [
+    "Tomato___Bacterial_spot",
+    "Tomato___Early_blight",
+    "Tomato___Late_blight",
+    "Tomato___Leaf_Mold",
+    "Tomato___Target_Spot",
+    "Tomato___healthy"
+  ],
+  "accuracy": 0.3060853769300636,
+  "macro_f1": 0.24406962201013374,
+  "weighted_f1": 0.31709080642059023
+}
