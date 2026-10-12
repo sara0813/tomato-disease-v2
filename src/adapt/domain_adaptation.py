@@ -157,7 +157,7 @@ def apply_tent(
     return model
 
 
-def _shot_pseudo_labels(model, loader, device, allowed_idx, class_mask, num_classes) -> torch.Tensor:
+def _shot_pseudo_labels(model, loader, device, allowed_idx, class_mask, num_classes, return_feats: bool = False):
     """SHOT 논문의 weighted k-means pseudo-labeling을 축소 적용한다. target 존재 클래스
     제한(allowed_idx)은 class_info.py 매핑표(설계 단계부터 알려진 정보)에서 온 것이지
     target ground truth를 보고 정한 게 아니다. 1차: 분류기 softmax를 가중치 삼아 클래스별
@@ -187,7 +187,58 @@ def _shot_pseudo_labels(model, loader, device, allowed_idx, class_mask, num_clas
 
     pseudo = assign(probs)
     pseudo = assign(F.one_hot(pseudo, num_classes).float())
+    if return_feats:
+        return pseudo.cpu(), feats.cpu()
     return pseudo.cpu()
+
+
+def _aps_refine(
+    feats: torch.Tensor,
+    pseudo_labels: torch.Tensor,
+    allowed_idx,
+    num_classes: int,
+    k: int = 4,
+    iters: int = 2,
+    gamma: float = 0.6,
+):
+    """UPA(Chen et al., Uncertainty-Aware Pseudo-Label Filtering for SFUDA, Neurocomputing 2024,
+    github.com/chenxi52/UPA)의 APS(Adaptive Pseudo-label Selection)만 분리 적용한다(CACL은 제외).
+    논문 식 4~6: 각 샘플의 K-최근접 이웃(코사인 유사도)이 현재 임시 라벨에 투표해 클래스 posterior를
+    추정하고(식4), argmax로 라벨을 갱신하며(식5), 이를 iters번 반복한다. 마지막에 "이웃 중 최종 라벨과
+    일치하는 비율(유사도 가중)"을 confidence로 삼아(식6), 클래스별로 confidence 상위 gamma%만
+    "신뢰할 수 있는 샘플"로 표시한다 — SHOT의 pseudo-label을 그대로 믿지 않고, 이웃 합의가 약한
+    샘플은 fine-tuning의 pseudo-label loss에서 제외하자는 아이디어."""
+    n = feats.size(0)
+    k = min(k, n - 1)
+    feats_n = F.normalize(feats, dim=1)
+    sims = feats_n @ feats_n.T
+    sims.fill_diagonal_(-2.0)  # 자기 자신 제외
+    topk_sims, topk_idx = sims.topk(k, dim=1)
+
+    disallowed = [i for i in range(num_classes) if i not in allowed_idx]
+    temp_labels = pseudo_labels.clone()
+    for _ in range(iters):
+        neighbor_labels = temp_labels[topk_idx]
+        onehot = F.one_hot(neighbor_labels, num_classes).float()
+        posterior = (topk_sims.unsqueeze(-1) * onehot).sum(dim=1) / k  # 식 4
+        if disallowed:
+            posterior[:, disallowed] = -1e9
+        temp_labels = posterior.argmax(dim=1)  # 식 5
+
+    neighbor_labels = temp_labels[topk_idx]
+    agree = (neighbor_labels == temp_labels.unsqueeze(1)).float()
+    confidence = (agree * topk_sims).sum(dim=1) / k  # 식 6
+
+    confident_mask = torch.zeros(n, dtype=torch.bool)
+    for c in allowed_idx:
+        class_idx = (temp_labels == c).nonzero(as_tuple=True)[0]
+        if len(class_idx) == 0:
+            continue
+        n_keep = max(1, int(round(len(class_idx) * gamma)))
+        top_local = confidence[class_idx].topk(min(n_keep, len(class_idx))).indices
+        confident_mask[class_idx[top_local]] = True
+
+    return temp_labels, confident_mask
 
 
 def apply_shot(
@@ -199,13 +250,28 @@ def apply_shot(
     lr: float = 1e-3,
     cls_loss_weight: float = 0.3,
     div_weight: float = 1.0,
+    aps: bool = False,
+    aps_k: int = 4,
+    aps_iters: int = 2,
+    aps_gamma: float = 0.6,
+    class_balance: bool = False,
 ) -> nn.Module:
     """SHOT (Liang et al., ICML 2020) 축소 적용. source classifier(head.fc)는 고정하고
     feature extractor(features)만 업데이트한다 — TENT(BN affine만 조금 흔드는 가장 약한 적응)보다
     훨씬 큰 폭으로 적응하는 방법. loss = pseudo-label cross-entropy(가중치 cls_loss_weight)
     + information-maximization(entropy 최소화 + batch 다양성 최대화, apply_tent의 collapse 방지
     항과 동일한 수식). class_mask는 pseudo-labeling과 손실 계산 양쪽에 항상 적용한다 —
-    partial label-space 문제를 이미 알고 시작하는 게 이 축소판의 핵심 전제라서 끄는 옵션은 없다."""
+    partial label-space 문제를 이미 알고 시작하는 게 이 축소판의 핵심 전제라서 끄는 옵션은 없다.
+
+    aps=True면 UPA의 APS(Adaptive Pseudo-label Selection, _aps_refine 참고)로 pseudo-label을
+    KNN 이웃 합의 기준으로 다시 다듬고, 클래스별 confidence 상위 aps_gamma%만 pseudo-label
+    cross-entropy 항에 반영한다(IM loss는 그대로 전체 배치에 적용) — SHOT의 클러스터링 결과를
+    무조건 믿지 않고, 이웃끼리 의견이 갈리는 애매한 샘플은 fine-tuning 신호에서 빼는 것.
+
+    class_balance=True면 pseudo-label cross-entropy를 그 epoch의 pseudo-label 클래스 분포의
+    역빈도로 가중한다 — Bangladesh처럼 pseudo-label 자체가 불균형하면(예: Leaf_Mold가 많고
+    Target_Spot이 적으면) 다수 클래스가 gradient를 지배해 소수 클래스가 더 밀리는데, 이걸
+    완화하기 위한 것. APS와 독립적으로 켤 수 있다."""
     allowed_idx = sorted({CLASS_NAMES.index(c) for c in EXTERNAL_PRESENT_CLASSES[dataset_key]})
     class_mask = class_mask_for(dataset_key, device)
     num_classes = len(CLASS_NAMES)
@@ -217,13 +283,34 @@ def apply_shot(
     optimizer = torch.optim.Adam(model.features.parameters(), lr=lr)
 
     for _ in range(epochs):
-        pseudo_labels = _shot_pseudo_labels(model, target_loader, device, allowed_idx, class_mask, num_classes)
+        pseudo_labels, pl_feats = _shot_pseudo_labels(
+            model, target_loader, device, allowed_idx, class_mask, num_classes, return_feats=True
+        )
+        if aps:
+            pseudo_labels, confident_mask = _aps_refine(
+                pl_feats, pseudo_labels, allowed_idx, num_classes, k=aps_k, iters=aps_iters, gamma=aps_gamma,
+            )
+        else:
+            confident_mask = torch.ones_like(pseudo_labels, dtype=torch.bool)
+
+        if class_balance:
+            counts = torch.bincount(
+                pseudo_labels[confident_mask], minlength=num_classes
+            ).float().clamp(min=1)
+            ce_weight = torch.zeros(num_classes)
+            ce_weight[allowed_idx] = 1.0 / counts[allowed_idx]
+            ce_weight[allowed_idx] *= len(allowed_idx) / ce_weight[allowed_idx].sum()  # 평균 1이 되게 정규화
+            ce_weight = ce_weight.to(device)
+        else:
+            ce_weight = None
+
         model.train()
         idx = 0
         for images, _ in target_loader:
             images = images.to(device)
             bsz = images.size(0)
             batch_pseudo = pseudo_labels[idx: idx + bsz].to(device)
+            batch_confident = confident_mask[idx: idx + bsz].to(device)
             idx += bsz
 
             optimizer.zero_grad()
@@ -232,7 +319,12 @@ def apply_shot(
             probs = logits.softmax(dim=1)
 
             im_loss = _entropy_of(probs).mean() - div_weight * _entropy_of(probs.mean(dim=0))
-            cls_loss = F.cross_entropy(logits, batch_pseudo)
+            if batch_confident.any():
+                cls_loss = F.cross_entropy(
+                    logits[batch_confident], batch_pseudo[batch_confident], weight=ce_weight,
+                )
+            else:
+                cls_loss = images.new_zeros(())
             loss = im_loss + cls_loss_weight * cls_loss
             loss.backward()
             optimizer.step()
@@ -374,6 +466,11 @@ def run_one(
     shot_epochs: int = 2,
     shot_lr: float = 1e-3,
     shot_cls_weight: float = 0.3,
+    shot_aps: bool = False,
+    shot_aps_k: int = 4,
+    shot_aps_iters: int = 2,
+    shot_aps_gamma: float = 0.6,
+    shot_class_balance: bool = False,
     eata_lr: float = 0.1,
     eata_e0_factor: float = 0.4,
     eata_d0: float = 0.05,
@@ -405,6 +502,8 @@ def run_one(
         model = apply_shot(
             model, loader, device, dataset_key, epochs=shot_epochs, lr=shot_lr, cls_loss_weight=shot_cls_weight,
             div_weight=div_weight if div_weight > 0 else 1.0,
+            aps=shot_aps, aps_k=shot_aps_k, aps_iters=shot_aps_iters, aps_gamma=shot_aps_gamma,
+            class_balance=shot_class_balance,
         )
     elif method == "eata":
         fisher, anchor = _compute_fisher(model_name, base_run_name, seed, img_size, device)
@@ -425,6 +524,10 @@ def run_one(
         run_name += f"_blend{adabn_blend_momentum:g}"
     if method == "shot" and (shot_epochs != 2 or shot_cls_weight != 0.3):
         run_name += f"_ep{shot_epochs}_cw{shot_cls_weight:g}"
+    if method == "shot" and shot_aps:
+        run_name += f"_aps{shot_aps_gamma:g}"
+    if method == "shot" and shot_class_balance:
+        run_name += "_cb"
     if method == "eata" and (eata_e0_factor != 0.4 or eata_d0 != 0.05 or eata_fisher_alpha != 1.0):
         run_name += f"_e0{eata_e0_factor:g}_d0{eata_d0:g}_fa{eata_fisher_alpha:g}"
     metrics = evaluate_model_on_external(
@@ -472,6 +575,23 @@ def main() -> None:
         "--shot-cls-weight", type=float, default=0.3,
         help="SHOT 전용: pseudo-label cross-entropy 항의 가중치 (나머지는 information-maximization)",
     )
+    parser.add_argument(
+        "--shot-aps", action="store_true",
+        help="SHOT 전용: UPA(Chen et al., Neurocomputing 2024)의 APS(Adaptive Pseudo-label Selection)를 "
+        "추가한다 — KNN 이웃 합의로 pseudo-label을 다듬고 클래스별 confidence 상위 shot-aps-gamma%만 "
+        "pseudo-label loss에 반영한다 (CACL은 미적용, APS만 분리 검증)",
+    )
+    parser.add_argument("--shot-aps-k", type=int, default=4, help="APS 전용: KNN 이웃 수 (논문 기본값 4)")
+    parser.add_argument("--shot-aps-iters", type=int, default=2, help="APS 전용: 라벨 재할당 반복 횟수 (논문 기본값 2)")
+    parser.add_argument(
+        "--shot-aps-gamma", type=float, default=0.6,
+        help="APS 전용: 클래스별 confidence 상위 몇 %를 pseudo-label loss에 쓸지 (논문 기본값 0.6)",
+    )
+    parser.add_argument(
+        "--shot-class-balance", action="store_true",
+        help="SHOT 전용: pseudo-label cross-entropy를 그 epoch의 pseudo-label 클래스 분포 역빈도로 "
+        "가중한다 (Bangladesh처럼 pseudo-label 자체가 불균형할 때 다수 클래스 쏠림 완화용, APS와 독립적)",
+    )
     parser.add_argument("--eata-lr", type=float, default=0.1, help="TENT/SHOT 기본값(1e-3)보다 훨씬 큼 — entropy 가중치·필터링으로 유효 gradient가 작아져서 같은 lr로는 거의 적응이 안 됨 (실측 확인)")
     parser.add_argument(
         "--eata-e0-factor", type=float, default=0.4,
@@ -505,6 +625,8 @@ def main() -> None:
                     device, tent_epochs=args.tent_epochs, tent_lr=args.tent_lr, masked=args.masked,
                     div_weight=args.div_weight, adabn_blend_momentum=args.adabn_blend_momentum,
                     shot_epochs=args.shot_epochs, shot_lr=args.shot_lr, shot_cls_weight=args.shot_cls_weight,
+                    shot_aps=args.shot_aps, shot_aps_k=args.shot_aps_k, shot_aps_iters=args.shot_aps_iters,
+                    shot_aps_gamma=args.shot_aps_gamma, shot_class_balance=args.shot_class_balance,
                     eata_lr=args.eata_lr, eata_e0_factor=args.eata_e0_factor, eata_d0=args.eata_d0,
                     eata_fisher_alpha=args.eata_fisher_alpha,
                 )
