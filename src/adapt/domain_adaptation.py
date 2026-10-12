@@ -19,6 +19,7 @@ TENT (Wang et al., ICLR 2021)
 
 import argparse
 import copy
+import math
 import sys
 import time
 from pathlib import Path
@@ -32,13 +33,13 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from class_info import CLASS_NAMES, EXTERNAL_PRESENT_CLASSES  # noqa: E402
-from config import EXTERNAL_DIRS, SEED, model_path  # noqa: E402
-from dataset import INTERPOLATION_MODES, make_external_dataloader  # noqa: E402
+from config import EXTERNAL_DIRS, SEED, TEST_DIR, model_path  # noqa: E402
+from dataset import INTERPOLATION_MODES, make_dataloader, make_external_dataloader  # noqa: E402
 from evaluate.evaluate_external import evaluate_model_on_external  # noqa: E402
 from models import MODEL_BUILDERS, input_shape_for  # noqa: E402
 from utils.seed import set_seed  # noqa: E402
 
-METHODS = ("source", "adabn", "tent", "shot")
+METHODS = ("source", "adabn", "tent", "shot", "eata")
 
 
 def class_mask_for(dataset_key: str, device) -> torch.Tensor:
@@ -240,6 +241,120 @@ def apply_shot(
     return model
 
 
+_FISHER_CACHE: dict[tuple[str, str, int, tuple[int, int]], tuple[dict, dict]] = {}
+
+
+def _compute_fisher(model_name: str, run_name: str, seed: int, img_size: tuple[int, int], device, n_samples: int = 2000):
+    """EATA의 anti-forgetting 정규화에 쓸 Fisher information을 source(PlantVillage) test셋으로 추정한다.
+    target label은 안 쓰지만, source 쪽 라벨 있는 데이터(원래 학습에도 쓰인 PlantVillage test셋)를
+    쓰는 것이라 "target-label 미사용" 원칙과는 무관하다. 모델/seed/해상도 조합별로 한 번만 계산해 캐시한다."""
+    cache_key = (model_name, run_name, seed, img_size)
+    if cache_key in _FISHER_CACHE:
+        return _FISHER_CACHE[cache_key]
+
+    fisher_model = load_base_model(model_name, run_name, seed, img_size, device)
+    fisher_model = _prepare_tent(fisher_model)  # Fisher도 TENT/EATA가 실제로 여는 BN affine 파라미터 기준으로 계산
+    trainable = {n: p for n, p in fisher_model.named_parameters() if p.requires_grad}
+    anchor = {n: p.detach().clone() for n, p in trainable.items()}
+
+    loader = make_dataloader(TEST_DIR, img_size, batch_size=32, shuffle=True)
+    criterion = nn.CrossEntropyLoss()
+    fisher = {n: torch.zeros_like(p) for n, p in trainable.items()}
+    seen = 0
+    fisher_model.train()  # EATA 원 구현과 동일하게 BN은 배치 통계로 forward (track_running_stats=False 상태 유지)
+    for images, labels in loader:
+        if seen >= n_samples:
+            break
+        images, labels = images.to(device), labels.to(device)
+        fisher_model.zero_grad()
+        logits = fisher_model(images)
+        loss = criterion(logits, labels)
+        loss.backward()
+        for n, p in trainable.items():
+            if p.grad is not None:
+                fisher[n] += p.grad.detach() ** 2 * images.size(0)
+        seen += images.size(0)
+    for n in fisher:
+        fisher[n] /= max(seen, 1)
+
+    _FISHER_CACHE[cache_key] = (fisher, anchor)
+    return fisher, anchor
+
+
+def apply_eata(
+    model: nn.Module,
+    target_loader,
+    device,
+    fisher: dict,
+    anchor: dict,
+    lr: float = 1e-3,
+    e0_factor: float = 0.4,
+    d0: float = 0.05,
+    fisher_alpha: float = 1.0,
+    class_mask=None,
+) -> nn.Module:
+    """EATA (Niu et al., ICML 2022) — 공식 구현(github.com/mr-eggplant/EATA)의 핵심 두 아이디어를
+    이 프로젝트 구조에 맞춰 재구현. TENT와 같은 지점(BN affine만 학습)에서 시작하되:
+
+    1) Sample-efficient entropy minimization: entropy가 E0=e0_factor*ln(클래스 수)보다 높은
+       (확신 없는) 샘플은 아예 적응에서 제외하고, 남은 샘플 중에서도 최근 배치 평균 예측과
+       코사인 유사도가 d0보다 높은(=중복되는) 샘플은 가중치를 0으로 줘 적응 "예산"을 아낀다.
+    2) Anti-forgetting 정규화: source test셋으로 추정한 Fisher information을 가중치 삼아
+       (현재 파라미터 - 원본 source 파라미터)^2 항을 손실에 더해, target에 맞추다가 source
+       지식을 과도하게 잊어버리는 것(=지금까지 관찰한 SHOT epoch 과적합과 같은 종류의 문제)을
+       억제한다."""
+    model = _prepare_tent(model)
+    trainable = [(n, p) for n, p in model.named_parameters() if p.requires_grad]
+    optimizer = torch.optim.Adam([p for _, p in trainable], lr=lr)
+
+    num_classes = len(CLASS_NAMES) if class_mask is None else int((class_mask == 0).sum().item())
+    e0 = e0_factor * math.log(max(num_classes, 2))
+    moving_avg = None
+
+    model.train()
+    for images, _ in target_loader:
+        images = images.to(device)
+        logits = model(images)
+        if class_mask is not None:
+            logits = logits + class_mask
+        probs = logits.softmax(dim=1)
+        entropy = _entropy_of(probs)
+
+        keep = entropy < e0
+        if keep.sum() == 0:
+            continue
+        kept_probs = probs[keep]
+        kept_entropy = entropy[keep]
+
+        with torch.no_grad():
+            batch_mean = kept_probs.mean(dim=0)
+        if moving_avg is None:
+            div_weight = torch.ones_like(kept_entropy)
+        else:
+            sims = F.cosine_similarity(kept_probs, moving_avg.unsqueeze(0).expand_as(kept_probs), dim=1)
+            div_weight = (sims < d0).float()  # 이전 배치 평균과 너무 비슷한(중복) 샘플은 가중치 0
+        moving_avg = batch_mean.detach() if moving_avg is None else 0.9 * moving_avg + 0.1 * batch_mean.detach()
+
+        entropy_weight = 1.0 / torch.exp((kept_entropy - e0).clamp(max=20))
+        sample_weight = entropy_weight * div_weight
+        if sample_weight.sum() <= 1e-8:
+            continue
+        entropy_loss = (sample_weight * kept_entropy).sum() / sample_weight.sum()
+
+        reg = images.new_zeros(())
+        for n, p in trainable:
+            if n in fisher:
+                reg = reg + (fisher[n] * (p - anchor[n]) ** 2).sum()
+        loss = entropy_loss + fisher_alpha * reg
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+    model.eval()
+    return model
+
+
 def run_one(
     method: str,
     model_name: str,
@@ -259,18 +374,22 @@ def run_one(
     shot_epochs: int = 2,
     shot_lr: float = 1e-3,
     shot_cls_weight: float = 0.3,
+    eata_lr: float = 0.1,
+    eata_e0_factor: float = 0.4,
+    eata_d0: float = 0.05,
+    eata_fisher_alpha: float = 1.0,
 ) -> dict:
     """masked=True면 class_mask_for()로 target에 없는 클래스를 가린다.
     TENT는 적응 단계(entropy 손실)에도 마스크를 넣어 mask-aware하게 적응하고,
     AdaBN은 통계 재계산 자체가 loss-free라 적응 단계는 그대로 두고 최종 평가에만 마스크를 적용한다.
-    SHOT은 마스킹이 방법 자체에 내장돼 있어 masked 인자와 무관하게 항상 적용된다.
+    SHOT·EATA는 마스킹이 방법 자체에 내장돼 있어 masked 인자와 무관하게 항상 적용된다.
 
     div_weight: TENT 전용, >0이면 diversity 정규화(collapse 방지)를 추가한다.
     adabn_blend_momentum: AdaBN 전용, 주면 완전 교체 대신 해당 momentum으로 source/target 통계를 블렌딩한다."""
     set_seed(seed)
     model = load_base_model(model_name, base_run_name, seed, img_size, device)
     loader = make_external_dataloader(data_dir, img_size, batch_size, interpolation=INTERPOLATION_MODES[interp])
-    masked = masked or method == "shot"
+    masked = masked or method in ("shot", "eata")
     class_mask = class_mask_for(dataset_key, device) if masked else None
 
     t0 = time.time()
@@ -287,6 +406,12 @@ def run_one(
             model, loader, device, dataset_key, epochs=shot_epochs, lr=shot_lr, cls_loss_weight=shot_cls_weight,
             div_weight=div_weight if div_weight > 0 else 1.0,
         )
+    elif method == "eata":
+        fisher, anchor = _compute_fisher(model_name, base_run_name, seed, img_size, device)
+        model = apply_eata(
+            model, loader, device, fisher, anchor, lr=eata_lr, e0_factor=eata_e0_factor, d0=eata_d0,
+            fisher_alpha=eata_fisher_alpha, class_mask=class_mask,
+        )
     else:
         raise ValueError(f"알 수 없는 method: {method}")
     adapt_time = time.time() - t0
@@ -300,6 +425,8 @@ def run_one(
         run_name += f"_blend{adabn_blend_momentum:g}"
     if method == "shot" and (shot_epochs != 2 or shot_cls_weight != 0.3):
         run_name += f"_ep{shot_epochs}_cw{shot_cls_weight:g}"
+    if method == "eata" and (eata_e0_factor != 0.4 or eata_d0 != 0.05 or eata_fisher_alpha != 1.0):
+        run_name += f"_e0{eata_e0_factor:g}_d0{eata_d0:g}_fa{eata_fisher_alpha:g}"
     metrics = evaluate_model_on_external(
         model, model_name, run_name, dataset_key, data_dir, img_size, interp, seed, device, batch_size,
         class_mask=class_mask,
@@ -345,6 +472,19 @@ def main() -> None:
         "--shot-cls-weight", type=float, default=0.3,
         help="SHOT 전용: pseudo-label cross-entropy 항의 가중치 (나머지는 information-maximization)",
     )
+    parser.add_argument("--eata-lr", type=float, default=0.1, help="TENT/SHOT 기본값(1e-3)보다 훨씬 큼 — entropy 가중치·필터링으로 유효 gradient가 작아져서 같은 lr로는 거의 적응이 안 됨 (실측 확인)")
+    parser.add_argument(
+        "--eata-e0-factor", type=float, default=0.4,
+        help="EATA 전용: entropy 임계값 E0 = 이 값 * ln(클래스 수). 이보다 entropy 높은(불확실한) 샘플은 적응에서 제외",
+    )
+    parser.add_argument(
+        "--eata-d0", type=float, default=0.05,
+        help="EATA 전용: 직전 배치 평균 예측과 코사인 유사도가 이보다 크면(중복 샘플) 가중치 0",
+    )
+    parser.add_argument(
+        "--eata-fisher-alpha", type=float, default=1.0,
+        help="EATA 전용: anti-forgetting 정규화 가중치 (source test셋 Fisher information 기반, 크면 원본 가중치에서 덜 움직임)",
+    )
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -365,6 +505,8 @@ def main() -> None:
                     device, tent_epochs=args.tent_epochs, tent_lr=args.tent_lr, masked=args.masked,
                     div_weight=args.div_weight, adabn_blend_momentum=args.adabn_blend_momentum,
                     shot_epochs=args.shot_epochs, shot_lr=args.shot_lr, shot_cls_weight=args.shot_cls_weight,
+                    eata_lr=args.eata_lr, eata_e0_factor=args.eata_e0_factor, eata_d0=args.eata_d0,
+                    eata_fisher_alpha=args.eata_fisher_alpha,
                 )
             )
 

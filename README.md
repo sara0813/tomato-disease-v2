@@ -18,7 +18,7 @@
 | 5.6 | 해상도 × 리사이즈 보간법 튜닝 (tiny_cnn_c) | ✅ 완료 |
 | 6 | 최종 모델 선정 | ✅ 완료 — **tiny_cnn_c, 96px, bicubic 리사이즈** |
 | 7 | 웹 시스템 적용 | ✅ 프로토타입 완료 (`app/streamlit_app.py`, 모델 선택형) |
-| 8 | Domain Adaptation (AdaBN/TENT/SHOT) | ✅ 완료 (seed42 단일) — 마스킹+SHOT 조합이 최종 권장안 (아래 참고) |
+| 8 | Domain Adaptation (AdaBN/TENT/SHOT/EATA) | ✅ 완료 (seed42 단일) — 마스킹+SHOT 조합이 최종 권장안 (아래 참고) |
 
 진행 과정과 판단 근거를 상세히 정리한 슬라이드: `docs/CNN_토마토_병해분류_V2_진행보고.pptx`
 (2026-10-02 기준 28장 — 최종 모델 선정·seed 재현성·Domain Adaptation 최종 결과 반영)
@@ -201,11 +201,11 @@ extractor(`features`)만 미세조정한다 — 처음엔 분류기 softmax를 �
 cross-entropy + information-maximization(entropy 최소화 + batch 다양성 최대화) loss로 학습한다
 (`--shot-epochs`, `--shot-cls-weight`로 조정 가능, 아래 두 하이퍼파라미터 설명 참고).
 
-| 데이터셋 | Source+마스킹 | AdaBN+마스킹 | **SHOT+마스킹(epoch=2)** |
-|---|---|---|---|
-| Taiwan | 32.48% | **38.85%** | 42.04% |
-| Bangladesh | 22.34% | 15.71% | **30.79%** |
-| PlantDoc | **20.31%** | 14.81% | 19.46% (macro F1 **0.182**, 전체 1위) |
+| 데이터셋 | Source+마스킹 | AdaBN+마스킹 | **SHOT+마스킹(epoch=2)** | EATA+마스킹 |
+|---|---|---|---|---|
+| Taiwan | 32.48% | **38.85%** | 42.04% | 35.35% |
+| Bangladesh | 22.34% | 15.71% | **30.79%** | 20.89% |
+| PlantDoc | **20.31%** | 14.81% | 19.46% (macro F1 **0.182**, 전체 1위) | 12.27% |
 
 AdaBN/TENT와 달리 **SHOT은 3개 데이터셋 전부에서 collapse 없이 안정적으로 잘 됐다** — Taiwan·
 Bangladesh 둘 다 AdaBN을 앞서고, PlantDoc은 정확도도 가장 높고 macro F1도 전체 1위다. 데이터셋마다
@@ -223,6 +223,33 @@ label-free라는 전제와 모순된다** — 그래서 "SHOT은 원래 TENT보�
 적응이라는 프로젝트 기조상 최소한만 늘린다"는 사전 기준으로 3개 데이터셋 공통 epoch=2를 고정값으로
 썼다. epoch별 전체 수치는 `results/external/*/tiny_cnn_c_res96_bicubic_shot_masked_ep{1,3}_cw0.3/`에
 남겨뒀다.
+
+### 추가 시도: EATA (TENT의 최신 후속작) — SHOT을 넘지 못함
+
+AdaBN·TENT·SHOT 다음으로 더 최근·유명한 방법도 시도해봤다. **EATA**(Niu et al., *Efficient
+Test-Time Model Adaptation without Forgetting*, ICML 2022, 공식 코드
+[`mr-eggplant/EATA`](https://github.com/mr-eggplant/EATA))는 TENT와 같은 지점(BN affine만 학습)에서
+출발하되 두 가지를 더한다 — ① entropy가 임계값(E0 = 0.4·ln(클래스 수))보다 높은(불확실한) 샘플과
+직전 배치 평균과 코사인 유사도가 높은(중복된) 샘플은 적응에서 제외하고, ② source 데이터(PlantVillage
+test셋)로 추정한 Fisher information을 가중치 삼아 `(현재 파라미터 - 원본 파라미터)²` 항을 손실에
+더해 source 지식을 과도하게 잊지 않게 막는다(`src/adapt/domain_adaptation.py`의 `apply_eata`).
+
+**구현하면서 발견한 점**: 논문 기본 설정 그대로(`lr=1e-3`, TENT/SHOT과 동일)로는 거의 적응이 안
+일어났다 — entropy·다양성 필터와 가중치 스킴이 ImageNet 1000클래스·대량 continual 스트림 기준으로
+설계돼 있어서, 우리처럼 클래스가 3~8개뿐이고 target 샘플이 수백~천 장뿐인 설정에서는 유효 gradient가
+너무 작아진다. `lr=0.1`(100배)로 올려야 실제로 움직이는 걸 실측으로 확인하고 그 값을 썼다.
+
+| 데이터셋 | Source+마스킹 | SHOT+마스킹(최종) | EATA+마스킹 |
+|---|---|---|---|
+| Taiwan | 32.48% | **42.04%** | 35.35% |
+| Bangladesh | 22.34% | **30.79%** | 20.89% |
+| PlantDoc | **20.31%** | 19.46% | 12.27% |
+
+**SHOT을 어디서도 못 넘었다.** Taiwan은 마스킹-only·TENT는 앞서지만 AdaBN·SHOT엔 못 미치고,
+Bangladesh·PlantDoc은 마스킹-only보다도 낮다(PlantDoc은 전체 방법 중 최저치, 다만 8개 클래스에
+고르게 퍼져 있어 collapse는 아니다). SHOT이 최종 권장 방법 자리를 유지한다 — "유명하고 TENT 직계
+후속작이라도 설계 당시 가정한 스케일(대형 모델·수천 클래스급 continual TTA)이 다르면 소형 모델·
+소수 클래스 문제엔 그대로 옮겨오기 어렵다"는 것도 하나의 결론으로 남긴다.
 
 ### 추가 검증: 모델을 더 줄이면 SHOT 과적합이 줄어들까 (tiny_cnn_c_lite)
 
@@ -283,7 +310,7 @@ bilinear로 96px에서 학습했다.
 | 5 | 외부 데이터 평가 | `src/evaluate/evaluate_external.py` | `results/external/` |
 | 6 | 최종 모델 선정 — tiny_cnn_c/96px/bicubic | `src/train/train_model.py --img-size --interp` | `results/figures/*_interp_matrix_tiny_cnn_c.png` |
 | 7 | 시스템 적용 | `app/streamlit_app.py` | 웹 프로토타입 (모델 선택형) |
-| 8 | Domain Adaptation (AdaBN/TENT/SHOT) | `src/adapt/domain_adaptation.py` | `results/external/*/*_adabn*/`, `*_tent*/`, `*_shot_masked/` |
+| 8 | Domain Adaptation (AdaBN/TENT/SHOT/EATA) | `src/adapt/domain_adaptation.py` | `results/external/*/*_adabn*/`, `*_tent*/`, `*_shot_masked/`, `*_eata_masked/` |
 
 **Corruption은 학습 증강이 아니라 평가용 변형이다.** 밝기 · 그림자 · 반사 · 블러 · 노이즈 · 가림
 6개 조건 × 약/중/강 3단계로 **테스트 이미지만** 변형해 모델별 성능 저하율을 비교한다. 학습 데이터에는
@@ -352,7 +379,7 @@ tomato_V2/
 │   ├── corruption/       # 변형 정의(6조건×3단계) · 변형셋 생성
 │   ├── train/            # train_model.py — 모델 이름 인자 하나로 통일, --img-size/--interp 튜닝, 체크포인트 재개
 │   ├── evaluate/         # 내부 · 효율 · corruption · 외부 평가
-│   ├── adapt/            # domain_adaptation.py — AdaBN/TENT/SHOT + class-restriction 마스킹 (source-free, target label 미사용)
+│   ├── adapt/            # domain_adaptation.py — AdaBN/TENT/SHOT/EATA + class-restriction 마스킹 (source-free, target label 미사용)
 │   ├── summary/          # 종합 비교표 (V2 실측 + V1 인용, 판단 없음)
 │   ├── visualize/        # 결과 그래프 (results/figures/*.png)
 │   └── utils/            # 시드 · 입출력
@@ -402,7 +429,7 @@ python src/evaluate/measure_efficiency.py
 python src/evaluate/evaluate_corruption.py
 python src/evaluate/evaluate_external.py
 
-# Domain Adaptation (AdaBN/TENT/SHOT) — 최종 모델에 적용, target label 미사용
+# Domain Adaptation (AdaBN/TENT/SHOT/EATA) — 최종 모델에 적용, target label 미사용
 python src/adapt/domain_adaptation.py --model tiny_cnn_c --img-size 96 --interp bicubic --dataset all --method all --masked
 # SHOT만 (마스킹이 방법 자체에 내장돼 있어 --masked 없어도 항상 적용됨)
 python src/adapt/domain_adaptation.py --model tiny_cnn_c --img-size 96 --interp bicubic --dataset all --method shot
