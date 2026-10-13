@@ -39,7 +39,7 @@ from evaluate.evaluate_external import evaluate_model_on_external  # noqa: E402
 from models import MODEL_BUILDERS, input_shape_for  # noqa: E402
 from utils.seed import set_seed  # noqa: E402
 
-METHODS = ("source", "adabn", "tent", "shot", "eata", "rgv")
+METHODS = ("source", "adabn", "tent", "shot", "eata", "rgv", "aad")
 
 
 def class_mask_for(dataset_key: str, device) -> torch.Tensor:
@@ -641,6 +641,100 @@ def apply_rgv(
     return model
 
 
+def apply_aad(
+    model: nn.Module,
+    target_loader,
+    device,
+    dataset_key: str,
+    epochs: int = 2,
+    lr: float = 1e-3,
+    k: int = 4,
+    disperse_weight: float = 1.0,
+) -> nn.Module:
+    """AaD (Attracting and Dispersing) — Yang et al., *Attracting and Dispersing: A Simple
+    Approach for Source-Free Domain Adaptation*, NeurIPS 2022, 공식 코드
+    github.com/Albert0147/AaD_SFDA. SHOT/EATA/R-GV와 근본적으로 다른 접근 — pseudo-label을
+    아예 만들지 않는다. feature 공간에서 k-최근접 이웃끼리는 softmax 예측이 서로 가깝도록
+    당기고(attract), 나머지 전체 샘플과는 예측이 멀어지도록(disperse) 만드는 순수 output-space
+    제약만으로 적응한다. "이 샘플이 어떤 클래스냐"를 확정하는 클러스터링 단계가 없어서, 지금까지
+    Bangladesh에서 반복 관찰된 "한 클래스로 쏠림"(Target_Spot이 실제보다 훨씬 많이 할당되는 것)
+    문제가 구조적으로 생기지 않을 수 있다는 기대로 추가했다.
+
+    공식 구현은 전체 target feature/예측을 momentum으로 갱신하는 memory bank를 쓰지만, 이
+    프로젝트 데이터셋은 300~1,100장으로 작아서 매 epoch 시작 시 전체를 다시 계산하는 것으로
+    단순화했다(SHOT의 매 epoch 재클러스터링과 같은 패턴) — EATA/R-GV처럼 "포스터/공식 코드
+    규모(ImageNet/Office-Home급)를 작은 데이터셋에 맞춰 축소 적용한 근사판"이다.
+
+    attract: sum_{j in kNN(i)} softmax(sim_ij) * <p_i, p_j>  (최대화)
+    disperse: mean_{j notin kNN(i), j != i} <p_i, p_j>  (최소화, 예측 collapse 방지)
+    loss = -attract + disperse_weight * disperse"""
+    class_mask = class_mask_for(dataset_key, device)
+
+    for p in model.parameters():
+        p.requires_grad_(False)
+    for p in model.features.parameters():
+        p.requires_grad_(True)
+    optimizer = torch.optim.Adam(model.features.parameters(), lr=lr)
+
+    for _ in range(epochs):
+        model.eval()
+        feats_list, probs_list = [], []
+        with torch.no_grad():
+            for images, _ in target_loader:
+                images = images.to(device)
+                f = model.head.pool(model.features(images)).flatten(1)
+                lg = model.head.fc(f) + class_mask
+                probs_list.append(lg.softmax(dim=1))
+                feats_list.append(f)
+        bank_feats = torch.cat(feats_list)
+        bank_probs = torch.cat(probs_list)
+        n = bank_feats.size(0)
+        k_eff = min(k, n - 1)
+
+        feats_n = F.normalize(bank_feats, dim=1)
+        sims = feats_n @ feats_n.T
+        sims.fill_diagonal_(-2.0)
+        topk_sim, topk_idx = sims.topk(k_eff, dim=1)
+        topk_w = topk_sim.softmax(dim=1)  # 이웃별 가중치(유사도 softmax)
+
+        neighbor_mask = torch.zeros(n, n, dtype=torch.bool, device=device)
+        neighbor_mask.scatter_(1, topk_idx, torch.ones_like(topk_idx, dtype=torch.bool))
+        non_neighbor_mask = ~neighbor_mask
+        non_neighbor_mask.fill_diagonal_(False)
+        non_neighbor_counts = non_neighbor_mask.sum(dim=1).clamp(min=1).float()
+
+        model.train()
+        idx = 0
+        for images, _ in target_loader:
+            images = images.to(device)
+            bsz = images.size(0)
+            batch_idx = torch.arange(idx, idx + bsz, device=device)
+            idx += bsz
+
+            optimizer.zero_grad()
+            feats = model.head.pool(model.features(images)).flatten(1)
+            logits = model.head.fc(feats) + class_mask
+            probs = logits.softmax(dim=1)
+
+            batch_topk_idx = topk_idx[batch_idx]
+            batch_topk_w = topk_w[batch_idx]
+            neighbor_probs = bank_probs[batch_topk_idx]  # (bsz, k, C)
+            dot_ij = (probs.unsqueeze(1) * neighbor_probs).sum(dim=2)  # (bsz, k) = <p_i, p_j>
+            attract = (batch_topk_w * dot_ij).sum(dim=1)
+
+            non_neigh_mask_batch = non_neighbor_mask[batch_idx].float()
+            non_neigh_counts_batch = non_neighbor_counts[batch_idx]
+            disperse = (probs @ bank_probs.T) * non_neigh_mask_batch
+            disperse = disperse.sum(dim=1) / non_neigh_counts_batch
+
+            loss = (-attract + disperse_weight * disperse).mean()
+            loss.backward()
+            optimizer.step()
+
+    model.eval()
+    return model
+
+
 def run_one(
     method: str,
     model_name: str,
@@ -680,18 +774,22 @@ def run_one(
     rgv_align_weight: float = 0.3,
     rgv_start_ratio: float = 0.3,
     rgv_end_ratio: float = 0.9,
+    aad_epochs: int = 2,
+    aad_lr: float = 1e-3,
+    aad_k: int = 4,
+    aad_disperse_weight: float = 1.0,
 ) -> dict:
     """masked=True면 class_mask_for()로 target에 없는 클래스를 가린다.
     TENT는 적응 단계(entropy 손실)에도 마스크를 넣어 mask-aware하게 적응하고,
     AdaBN은 통계 재계산 자체가 loss-free라 적응 단계는 그대로 두고 최종 평가에만 마스크를 적용한다.
-    SHOT·EATA·R-GV는 마스킹이 방법 자체에 내장돼 있어 masked 인자와 무관하게 항상 적용된다.
+    SHOT·EATA·R-GV·AaD는 마스킹이 방법 자체에 내장돼 있어 masked 인자와 무관하게 항상 적용된다.
 
     div_weight: TENT 전용, >0이면 diversity 정규화(collapse 방지)를 추가한다.
     adabn_blend_momentum: AdaBN 전용, 주면 완전 교체 대신 해당 momentum으로 source/target 통계를 블렌딩한다."""
     set_seed(seed)
     model = load_base_model(model_name, base_run_name, seed, img_size, device)
     loader = make_external_dataloader(data_dir, img_size, batch_size, interpolation=INTERPOLATION_MODES[interp])
-    masked = masked or method in ("shot", "eata", "rgv")
+    masked = masked or method in ("shot", "eata", "rgv", "aad")
     class_mask = class_mask_for(dataset_key, device) if masked else None
 
     t0 = time.time()
@@ -723,6 +821,11 @@ def run_one(
             model, loader, device, dataset_key, rounds=rgv_rounds, lr=rgv_lr, cls_loss_weight=rgv_cls_weight,
             align_weight=rgv_align_weight, start_ratio=rgv_start_ratio, end_ratio=rgv_end_ratio,
         )
+    elif method == "aad":
+        model = apply_aad(
+            model, loader, device, dataset_key, epochs=aad_epochs, lr=aad_lr, k=aad_k,
+            disperse_weight=aad_disperse_weight,
+        )
     else:
         raise ValueError(f"알 수 없는 method: {method}")
     adapt_time = time.time() - t0
@@ -750,6 +853,8 @@ def run_one(
         run_name += f"_e0{eata_e0_factor:g}_d0{eata_d0:g}_fa{eata_fisher_alpha:g}"
     if method == "rgv" and (rgv_rounds != 3 or rgv_align_weight != 0.3):
         run_name += f"_r{rgv_rounds}_aw{rgv_align_weight:g}"
+    if method == "aad" and (aad_epochs != 2 or aad_k != 4 or aad_disperse_weight != 1.0):
+        run_name += f"_ep{aad_epochs}_k{aad_k}_dw{aad_disperse_weight:g}"
     metrics = evaluate_model_on_external(
         model, model_name, run_name, dataset_key, data_dir, img_size, interp, seed, device, batch_size,
         class_mask=class_mask,
@@ -855,6 +960,10 @@ def main() -> None:
     parser.add_argument("--rgv-align-weight", type=float, default=0.3, help="R-GV 전용: D_t,l/D_t,u 간 semantic alignment 가중치")
     parser.add_argument("--rgv-start-ratio", type=float, default=0.3, help="R-GV 전용: 1라운드에서 confident로 고르는 클래스별 비율")
     parser.add_argument("--rgv-end-ratio", type=float, default=0.9, help="R-GV 전용: 마지막 라운드에서 confident로 고르는 클래스별 비율")
+    parser.add_argument("--aad-epochs", type=int, default=2, help="AaD 전용(공식 코드 momentum memory bank를 매 epoch 재계산으로 축소 적용): 적응 epoch 수")
+    parser.add_argument("--aad-lr", type=float, default=1e-3)
+    parser.add_argument("--aad-k", type=int, default=4, help="AaD 전용: attract 대상 최근접 이웃 수")
+    parser.add_argument("--aad-disperse-weight", type=float, default=1.0, help="AaD 전용: disperse(비-이웃과 멀어지기) 항 가중치")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -885,6 +994,8 @@ def main() -> None:
                     rgv_rounds=args.rgv_rounds, rgv_lr=args.rgv_lr, rgv_cls_weight=args.rgv_cls_weight,
                     rgv_align_weight=args.rgv_align_weight, rgv_start_ratio=args.rgv_start_ratio,
                     rgv_end_ratio=args.rgv_end_ratio,
+                    aad_epochs=args.aad_epochs, aad_lr=args.aad_lr, aad_k=args.aad_k,
+                    aad_disperse_weight=args.aad_disperse_weight,
                 )
             )
 

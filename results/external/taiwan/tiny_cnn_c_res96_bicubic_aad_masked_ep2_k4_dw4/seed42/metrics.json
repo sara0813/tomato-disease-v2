@@ -1,0 +1,20 @@
+{
+  "model": "tiny_cnn_c",
+  "run_name": "tiny_cnn_c_res96_bicubic_aad_masked_ep2_k4_dw4",
+  "img_size": [
+    96,
+    96
+  ],
+  "interp": "bicubic",
+  "dataset": "taiwan",
+  "n_total": 314,
+  "n_classes_present": 3,
+  "classes_present": [
+    "Tomato___Bacterial_spot",
+    "Tomato___Late_blight",
+    "Tomato___healthy"
+  ],
+  "accuracy": 0.4171974522292994,
+  "macro_f1": 0.4123714297682343,
+  "weighted_f1": 0.41744762169107064
+}

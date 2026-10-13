@@ -18,7 +18,7 @@
 | 5.6 | 해상도 × 리사이즈 보간법 튜닝 (tiny_cnn_c) | ✅ 완료 |
 | 6 | 최종 모델 선정 | ✅ 완료 — **tiny_cnn_c, 96px, bicubic 리사이즈** |
 | 7 | 웹 시스템 적용 | ✅ 프로토타입 완료 (`app/streamlit_app.py`, 모델 선택형) |
-| 8 | Domain Adaptation (AdaBN/TENT/SHOT/EATA/UPA/R-GV) | ✅ 완료 (3-seed 검증 완료) — 마스킹+SHOT(epoch=2) 조합이 최종 권장안(APS·데이터셋별 극단 튜닝 둘 다 3-seed에서 noise/붕괴로 기각), 데이터셋별 심층 진단 포함 (아래 참고) |
+| 8 | Domain Adaptation (AdaBN/TENT/SHOT/EATA/UPA/R-GV/AaD) | ✅ 완료 (3-seed 검증 완료) — 마스킹+SHOT(epoch=2) 조합이 최종 권장안(APS·데이터셋별 극단 튜닝·AaD 모두 noise/붕괴/무개선으로 기각), 데이터셋별 심층 진단 포함 (아래 참고) |
 
 진행 과정과 판단 근거를 상세히 정리한 슬라이드: `docs/CNN_토마토_병해분류_V2_진행보고.pptx`
 (2026-10-02 기준 28장 — 최종 모델 선정·seed 재현성·Domain Adaptation 최종 결과 반영)
@@ -454,6 +454,33 @@ seed-robust한 방법을 더 찾으면 가능성이 있고, Bangladesh는 오라
 크며 그중 상당 부분이 Target_Spot/Bacterial_spot의 구조적 난이도(정답을 줘도 어려움)에서 온다,
 PlantDoc은 오라클 상한 자체가 23.5%라 애초에 불가능하다.
 
+### 추가 시도: AaD (NeurIPS 2022) — pseudo-label 없이도 SHOT을 못 넘음
+
+Yang et al., *Attracting and Dispersing: A Simple Approach for Source-Free Domain Adaptation*,
+NeurIPS 2022, 공식 코드 [`Albert0147/AaD_SFDA`](https://github.com/Albert0147/AaD_SFDA). 지금까지
+시도한 SHOT/EATA/R-GV는 전부 "이 샘플이 어떤 클래스냐"를 먼저 정하는 클러스터링/pseudo-label
+단계가 있고, Bangladesh에서 반복 관찰된 "한 클래스로 쏠림"(Target_Spot 등)이 그 단계에서 생겼다.
+AaD는 클러스터링이 전혀 없다 — feature 공간에서 k-최근접 이웃끼리는 softmax 예측이 가깝도록
+당기고(attract), 나머지 전체 샘플과는 멀어지도록(disperse) 만드는 output-space 제약만으로
+적응한다. 공식 구현은 momentum memory bank를 쓰지만, 데이터셋이 작아(300~1,100장) 매 epoch
+시작 시 전체를 다시 계산하는 것으로 단순화했다(EATA/R-GV와 같은 "근사 구현" 패턴).
+
+| 데이터셋 | SHOT(epoch=2, 최종) | AaD(최선 하이퍼파라미터) |
+|---|---|---|
+| Taiwan | 42.04%(F1 0.389) | 42.36%(F1 0.422, disperse_weight=3.0) |
+| Bangladesh | **30.79%**(F1 0.261) | 20.16%(F1 0.194, disperse_weight=2.0) |
+| PlantDoc | **19.46%**(F1 0.182) | 19.18%(F1 0.141, 기본값) |
+
+클러스터링이 없어서 기대했던 "쏠림 방지" 효과는 확인되지 않았다 — Bangladesh는 오히려 SHOT보다
+10%p 이상 낮다(disperse 항이 세질수록 소수 클래스 쪽 신호가 더 묻히는 것으로 보인다). Taiwan은
+seed42 기준 SHOT과 거의 동치(소수점 차이)지만, 이 프로젝트에서 이미 두 번(APS, 데이터셋별 극단
+튜닝) 확인했듯 **단일 seed에서의 "거의 동치"는 3-seed로 보면 어느 쪽으로든 뒤집힐 수 있어서**,
+굳이 3-seed 검증에 시간을 더 쓰기보다 여기서 멈춘다. AdaBN/TENT/EATA/UPA/R-GV/AaD까지 — 최신·
+유명 방법을 포함해 시도한 모든 대안이 결국 SHOT(epoch=2)을 넘지 못했고, 그 각각의 실패 이유가
+전부 다르다는 점(negative transfer, contrastive-loss 구조 불일치, alignment 손실의 역효과,
+disperse 항의 소수 클래스 희석)이 오히려 SHOT이 이 프로젝트 규모에 가장 안정적으로 맞는 방법
+이라는 결론을 거듭 뒷받침한다.
+
 ### 연구 방향 재정리와 가설 검증
 
 지금까지의 진단(심층 진단 절)과 추가 시도(UPA/R-GV/EATA/UCon-SFDA 절) 결과를 바탕으로, 이 프로젝트의
@@ -515,7 +542,7 @@ Domain Adaptation 부분은 "여러 방법을 똑같이 돌려서 비교"하는 
 | 5 | 외부 데이터 평가 | `src/evaluate/evaluate_external.py` | `results/external/` |
 | 6 | 최종 모델 선정 — tiny_cnn_c/96px/bicubic | `src/train/train_model.py --img-size --interp` | `results/figures/*_interp_matrix_tiny_cnn_c.png` |
 | 7 | 시스템 적용 | `app/streamlit_app.py` | 웹 프로토타입 (모델 선택형) |
-| 8 | Domain Adaptation (AdaBN/TENT/SHOT/EATA/UPA/R-GV) | `src/adapt/domain_adaptation.py`, `shot_stage_analysis.py`, `shot_oracle_upperbound.py` | `results/external/*/*_{adabn,tent,shot,eata,rgv}*masked*/` |
+| 8 | Domain Adaptation (AdaBN/TENT/SHOT/EATA/UPA/R-GV/AaD) | `src/adapt/domain_adaptation.py`, `shot_stage_analysis.py`, `shot_oracle_upperbound.py` | `results/external/*/*_{adabn,tent,shot,eata,rgv,aad}*masked*/` |
 
 **Corruption은 학습 증강이 아니라 평가용 변형이다.** 밝기 · 그림자 · 반사 · 블러 · 노이즈 · 가림
 6개 조건 × 약/중/강 3단계로 **테스트 이미지만** 변형해 모델별 성능 저하율을 비교한다. 학습 데이터에는
@@ -584,7 +611,7 @@ tomato_V2/
 │   ├── corruption/       # 변형 정의(6조건×3단계) · 변형셋 생성
 │   ├── train/            # train_model.py — 모델 이름 인자 하나로 통일, --img-size/--interp 튜닝, 체크포인트 재개
 │   ├── evaluate/         # 내부 · 효율 · corruption · 외부 평가
-│   ├── adapt/            # domain_adaptation.py(AdaBN/TENT/SHOT/EATA/UPA/R-GV + 마스킹) + shot_stage_analysis.py/shot_oracle_upperbound.py(진단 전용)
+│   ├── adapt/            # domain_adaptation.py(AdaBN/TENT/SHOT/EATA/UPA/R-GV/AaD + 마스킹) + shot_stage_analysis.py/shot_oracle_upperbound.py(진단 전용)
 │   ├── summary/          # 종합 비교표 (V2 실측 + V1 인용, 판단 없음)
 │   ├── visualize/        # 결과 그래프 (results/figures/*.png)
 │   └── utils/            # 시드 · 입출력
