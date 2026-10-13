@@ -18,7 +18,7 @@
 | 5.6 | 해상도 × 리사이즈 보간법 튜닝 (tiny_cnn_c) | ✅ 완료 |
 | 6 | 최종 모델 선정 | ✅ 완료 — **tiny_cnn_c, 96px, bicubic 리사이즈** |
 | 7 | 웹 시스템 적용 | ✅ 프로토타입 완료 (`app/streamlit_app.py`, 모델 선택형) |
-| 8 | Domain Adaptation (AdaBN/TENT/SHOT/EATA/UPA/R-GV) | ✅ 완료 (3-seed 검증 완료) — 마스킹+SHOT(epoch=2) 조합이 최종 권장안(APS는 3-seed에서 noise 범위로 기각), 데이터셋별 심층 진단 포함 (아래 참고) |
+| 8 | Domain Adaptation (AdaBN/TENT/SHOT/EATA/UPA/R-GV) | ✅ 완료 (3-seed 검증 완료) — 마스킹+SHOT(epoch=2) 조합이 최종 권장안(APS·데이터셋별 극단 튜닝 둘 다 3-seed에서 noise/붕괴로 기각), 데이터셋별 심층 진단 포함 (아래 참고) |
 
 진행 과정과 판단 근거를 상세히 정리한 슬라이드: `docs/CNN_토마토_병해분류_V2_진행보고.pptx`
 (2026-10-02 기준 28장 — 최종 모델 선정·seed 재현성·Domain Adaptation 최종 결과 반영)
@@ -409,6 +409,50 @@ seed42 단일 실행에서는 APS가 Taiwan을 42.04%→44.59%로 뚜렷하게 �
 같이 클래스가 적은 데이터셋에서는 추가해볼 만한 옵션"으로 남기되, 기본값으로 켜지 않는다. SHOT
 자체도 seed에 따라 표준편차가 5~6%p로 커서(특히 Taiwan·Bangladesh), 단일 seed 결과를 그대로
 "최종 성능"으로 보고하면 과대 해석이 될 수 있다는 점도 이번 검증에서 같이 확인했다.
+
+### 데이터셋별 하이퍼파라미터 극단 튜닝 시도 — 또 한 번의 seed 과적합
+
+지도교수님이 "데이터셋마다 따로 튜닝해도 된다"고 확인해 주셔서, epoch=2 공통 고정값 제약을 풀고
+Taiwan·Bangladesh 각각에 맞는 하이퍼파라미터를 seed42 기준으로 최대한 밀어붙여 봤다. **결론만
+먼저 말하면 — 이 역시 APS와 같은 seed 과적합 함정에 걸렸고, Bangladesh는 오히려 기존보다
+나빠졌다.** 이 절은 그 과정과 실패를 투명하게 남긴다.
+
+**Taiwan**: epoch·cls_weight를 더 키울수록 seed42 정확도가 계속 올라, epoch=7·cls_weight=1.0에서
+**63.06%**(F1 0.592)까지 나왔다(epoch=10은 56%대로 다시 떨어져 7이 사실상 정점). 60% 목표를
+넘겼다고 생각했지만, 이 설정을 seed123/2026에 그대로 적용하자 33.12%/42.99%로 크게 떨어졌다 —
+**3-seed 평균 46.39% ±12.46**. 평균 자체는 epoch=2 기준(37.58%)보다 높지만, 표준편차가 너무 커서
+"60%를 reproducible하게 달성했다"고는 말할 수 없다.
+
+**Bangladesh**: 다음을 새로 구현/시도했다 — ① `_balanced_assign`(클래스별 pseudo-label 할당
+개수에 상한을 둬 한 클래스로의 쏠림을 억제, `--shot-balanced-cap`) ② 특정 클래스를 pseudo-labeling에서
+완전히 제외(`--shot-exclude-classes`) ③ seed42/123/2026 세 source 모델의 softmax를 평균한
+앙상블 pseudo-labeling. Oracle 진단을 클래스별로 다시 뜯어보니 원인이 명확해졌다 — **Target_Spot
+(recall 21%)·Bacterial_spot(recall 7%)은 실제 정답을 줘도 모델이 잘 못 맞추는, 작고(14~28장)
+시각적으로 겹치는 클래스였다.** 반면 Late_blight(96%)·Leaf_Mold(58%)·healthy(57%)·Early_blight(64%)는
+오라클에서 잘 분리돼, 전체 샘플의 87%를 차지하는 이 4개만 잘 맞혀도 오라클 수준(58.6%)에 근접할
+수 있다는 계산이 나왔다. 그런데 ①~③ 전부 명확한 돌파구가 되지 못했다 — exclude는 오히려
+악화시켰고(Target_Spot 자리를 없애도 그 샘플들이 Late_blight로 안 가고 다른 틀린 클래스로 흩어짐),
+앙상블도 중립적이었다. 결국 `class_balance + balanced_cap(1.0)` 조합에 epoch·cls_weight를
+그리드서치해 **epoch=4·cls_weight=2.0에서 seed42 34.42%**(F1 0.302)를 찾았는데, 이걸 3-seed로
+검증하자 seed123=10.54%, seed2026=13.81%로 **완전히 붕괴했다 — 3-seed 평균 19.59% ±10.57,
+기존 SHOT(epoch=2) 기준(24.28%)보다도 더 나쁘다.**
+
+**교훈**: "데이터셋별로 튜닝해도 된다"는 허락은 공정성(여러 데이터셋에 같은 epoch을 억지로
+강제하지 않아도 된다) 문제를 풀어준 것이지, "1개 seed만 보고 하이퍼파라미터를 끝까지 밀어도
+된다"는 뜻이 아니다. cls_weight를 2.0까지 올리는 것처럼 하이퍼파라미터를 공격적으로 키울수록
+seed42의 특정 pseudo-label 초기 상태에 과적합할 위험도 같이 커지고, 이번처럼 Bangladesh에서는
+그 과적합이 다른 seed에서 "개선"이 아니라 "붕괴"로 나타났다. **모든 하이퍼파라미터 탐색은
+반드시 3-seed로 재검증한 뒤에만 "성능 향상"이라고 보고해야 한다**는 원칙을 이번에도 재확인했다
+— 그래서 두 설정 다 최종 파이프라인에 반영하지 않고, `마스킹+SHOT(epoch=2)`(3-seed 검증된
+Taiwan 37.58%±5.86·Bangladesh 24.28%±5.62·PlantDoc 19.75%±1.40)를 최종으로 유지한다.
+`_balanced_assign`/`--shot-exclude-classes`는 코드에는 남겨 두되(재현·추가 실험용), 기본
+파이프라인에는 포함하지 않는다.
+
+**세 데이터셋 모두 60% 이상이라는 목표는, 이 프로젝트 규모(경량 CNN, target 300~1,100장,
+label-free)에서는 현실적이지 않다는 게 최종 결론이다** — Taiwan은 오라클 상한(70.5%)이 높아
+seed-robust한 방법을 더 찾으면 가능성이 있고, Bangladesh는 오라클 상한(58.6%)과의 격차가 여전히
+크며 그중 상당 부분이 Target_Spot/Bacterial_spot의 구조적 난이도(정답을 줘도 어려움)에서 온다,
+PlantDoc은 오라클 상한 자체가 23.5%라 애초에 불가능하다.
 
 ### 연구 방향 재정리와 가설 검증
 

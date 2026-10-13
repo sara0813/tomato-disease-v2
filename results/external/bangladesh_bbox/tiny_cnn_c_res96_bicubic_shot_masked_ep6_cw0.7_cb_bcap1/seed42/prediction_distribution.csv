@@ -1,0 +1,11 @@
+﻿class,predicted_count,predicted_pct,present_in_ground_truth
+Tomato___healthy,313,28.43,True
+Tomato___Target_Spot,209,18.98,True
+Tomato___Bacterial_spot,163,14.8,True
+Tomato___Late_blight,156,14.17,True
+Tomato___Leaf_Mold,152,13.81,True
+Tomato___Early_blight,108,9.81,True
+Tomato___Spider_mites Two-spotted_spider_mite,0,0.0,False
+Tomato___Septoria_leaf_spot,0,0.0,False
+Tomato___Tomato_Yellow_Leaf_Curl_Virus,0,0.0,False
+Tomato___Tomato_mosaic_virus,0,0.0,False

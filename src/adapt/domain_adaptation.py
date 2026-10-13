@@ -157,12 +157,52 @@ def apply_tent(
     return model
 
 
-def _shot_pseudo_labels(model, loader, device, allowed_idx, class_mask, num_classes, return_feats: bool = False):
+def _balanced_assign(sims: torch.Tensor, allowed_idx, disallowed, cap_ratio: float, max_iters: int = 50) -> torch.Tensor:
+    """클래스별 할당 개수를 "공정 몫(n_samples / 클래스 수)의 cap_ratio배"로 상한을 둔 뒤, 그
+    상한을 넘는 클래스에서 가장 낮은 유사도(확신이 약한) 샘플만 다음으로 유사도가 높은 허용
+    클래스로 재배정한다(그리디). Bangladesh에서 관찰된 "한 클래스로 몰림"(예: Target_Spot
+    예측 0장→211장) 같은 폭주를 억제하려는 목적 — target label은 전혀 안 쓰고, 샘플 수·허용
+    클래스 수(마스킹과 동일하게 설계 단계부터 아는 정보)만으로 정한 상한이라 label-free 원칙과
+    무관하다."""
+    n = sims.size(0)
+    cap = max(1, math.ceil(n / len(allowed_idx) * cap_ratio))
+    work = sims.clone()
+    if disallowed:
+        work[:, disallowed] = -1e9
+    labels = work.argmax(dim=1)
+
+    for _ in range(max_iters):
+        counts = torch.bincount(labels, minlength=sims.size(1))
+        over_classes = [c for c in allowed_idx if counts[c] > cap]
+        if not over_classes:
+            break
+        changed = False
+        for c in over_classes:
+            idx_cls = (labels == c).nonzero(as_tuple=True)[0]
+            excess = int(counts[c].item()) - cap
+            if excess <= 0:
+                continue
+            scores = work[idx_cls, c]
+            kick_local = scores.topk(min(excess, idx_cls.numel()), largest=False).indices
+            kick_idx = idx_cls[kick_local]
+            work[kick_idx, c] = -1e9  # 이 클래스는 더 이상 후보가 아님
+            labels[kick_idx] = work[kick_idx].argmax(dim=1)
+            changed = True
+        if not changed:
+            break
+    return labels
+
+
+def _shot_pseudo_labels(
+    model, loader, device, allowed_idx, class_mask, num_classes, return_feats: bool = False,
+    balanced_cap_ratio: float | None = None,
+):
     """SHOT 논문의 weighted k-means pseudo-labeling을 축소 적용한다. target 존재 클래스
     제한(allowed_idx)은 class_info.py 매핑표(설계 단계부터 알려진 정보)에서 온 것이지
     target ground truth를 보고 정한 게 아니다. 1차: 분류기 softmax를 가중치 삼아 클래스별
     중심(centroid)을 구하고 코사인 거리로 재할당 → 2차: 그 결과(one-hot)로 중심을 다시 구해
-    한 번 더 재할당한다(논문의 2-step 절차)."""
+    한 번 더 재할당한다(논문의 2-step 절차). balanced_cap_ratio가 주어지면 각 단계의 재할당에
+    _balanced_assign으로 클래스별 상한을 적용한다."""
     model.eval()
     feats_list, probs_list = [], []
     with torch.no_grad():
@@ -183,6 +223,8 @@ def _shot_pseudo_labels(model, loader, device, allowed_idx, class_mask, num_clas
         sims = feats_n @ centroids_n.T
         if disallowed:
             sims[:, disallowed] = -1e9
+        if balanced_cap_ratio is not None:
+            return _balanced_assign(sims, allowed_idx, disallowed, balanced_cap_ratio)
         return sims.argmax(dim=1)
 
     pseudo = assign(probs)
@@ -284,6 +326,9 @@ def apply_shot(
     class_balance: bool = False,
     cacl: bool = False,
     cacl_temperature: float = 0.1,
+    balanced_cap: bool = False,
+    balanced_cap_ratio: float = 1.5,
+    exclude_classes: tuple[str, ...] = (),
 ) -> nn.Module:
     """SHOT (Liang et al., ICML 2020) 축소 적용. source classifier(head.fc)는 고정하고
     feature extractor(features)만 업데이트한다 — TENT(BN affine만 조금 흔드는 가장 약한 적응)보다
@@ -305,10 +350,30 @@ def apply_shot(
     cacl=True면 UPA의 CACL(Class-Aware Contrastive Learning, _contrastive_loss 참고)을 더한다 —
     APS의 confident_mask 안에서 같은 pseudo-label끼리 feature를 가깝게, 배치 내 다른 샘플과는
     멀게 당기는 contrastive loss. 논문에서는 APS 위에 얹어 쓰는 구성이라(positive pair가
-    confident set 기준) aps=False면 전체 배치를 confident로 취급해 사실상 일반 SupCon이 된다."""
+    confident set 기준) aps=False면 전체 배치를 confident로 취급해 사실상 일반 SupCon이 된다.
+
+    balanced_cap=True면 _balanced_assign으로 pseudo-label 클러스터링 단계에서 클래스별 할당
+    개수에 상한(balanced_cap_ratio × 공정 몫)을 둔다 — Bangladesh에서 관찰된 "한 클래스로
+    쏠림"(Late_blight 쏠림이 Target_Spot 쏠림으로 옮겨간 것) 같은 폭주를, loss 재가중(class_balance)이
+    아니라 pseudo-label 생성 자체에서 막는 접근. class_balance와 독립적으로 켤 수 있다.
+
+    exclude_classes: oracle 진단(실제 정답으로 학습해도 recall이 낮은 클래스가 있는지 확인)에서
+    구조적으로 어려운 것으로 확인된 클래스를 pseudo-labeling·학습 손실 양쪽에서 완전히 제외한다
+    (eval 시 최종 마스킹에는 영향 없음 — run_one()이 별도로 적용하는 class_mask는 그대로 전체
+    허용 클래스를 쓴다). 이 클래스들이 "끌어당기는 자리"를 없애, 남은 클래스끼리는 더 깨끗하게
+    분리되길 기대하는 접근 — Bangladesh의 Target_Spot/Bacterial_spot처럼 오라클 recall이 낮은
+    소수 클래스를 빼고 나머지 다수 클래스(지금 사례는 전체의 87%)에 집중한다."""
     allowed_idx = sorted({CLASS_NAMES.index(c) for c in EXTERNAL_PRESENT_CLASSES[dataset_key]})
     class_mask = class_mask_for(dataset_key, device)
     num_classes = len(CLASS_NAMES)
+
+    exclude_idx = {CLASS_NAMES.index(c) for c in exclude_classes}
+    pseudo_allowed_idx = [i for i in allowed_idx if i not in exclude_idx]
+    if exclude_idx:
+        pseudo_class_mask = class_mask.clone()
+        pseudo_class_mask[list(exclude_idx)] = float("-inf")
+    else:
+        pseudo_class_mask = class_mask
 
     for p in model.parameters():
         p.requires_grad_(False)
@@ -318,11 +383,12 @@ def apply_shot(
 
     for _ in range(epochs):
         pseudo_labels, pl_feats = _shot_pseudo_labels(
-            model, target_loader, device, allowed_idx, class_mask, num_classes, return_feats=True
+            model, target_loader, device, pseudo_allowed_idx, pseudo_class_mask, num_classes, return_feats=True,
+            balanced_cap_ratio=balanced_cap_ratio if balanced_cap else None,
         )
         if aps:
             pseudo_labels, confident_mask = _aps_refine(
-                pl_feats, pseudo_labels, allowed_idx, num_classes, k=aps_k, iters=aps_iters, gamma=aps_gamma,
+                pl_feats, pseudo_labels, pseudo_allowed_idx, num_classes, k=aps_k, iters=aps_iters, gamma=aps_gamma,
             )
         else:
             confident_mask = torch.ones_like(pseudo_labels, dtype=torch.bool)
@@ -332,8 +398,8 @@ def apply_shot(
                 pseudo_labels[confident_mask], minlength=num_classes
             ).float().clamp(min=1)
             ce_weight = torch.zeros(num_classes)
-            ce_weight[allowed_idx] = 1.0 / counts[allowed_idx]
-            ce_weight[allowed_idx] *= len(allowed_idx) / ce_weight[allowed_idx].sum()  # 평균 1이 되게 정규화
+            ce_weight[pseudo_allowed_idx] = 1.0 / counts[pseudo_allowed_idx]
+            ce_weight[pseudo_allowed_idx] *= len(pseudo_allowed_idx) / ce_weight[pseudo_allowed_idx].sum()  # 평균 1이 되게 정규화
             ce_weight = ce_weight.to(device)
         else:
             ce_weight = None
@@ -349,7 +415,7 @@ def apply_shot(
 
             optimizer.zero_grad()
             feats = model.head.pool(model.features(images)).flatten(1)
-            logits = model.head.fc(feats) + class_mask
+            logits = model.head.fc(feats) + pseudo_class_mask
             probs = logits.softmax(dim=1)
 
             im_loss = _entropy_of(probs).mean() - div_weight * _entropy_of(probs.mean(dim=0))
@@ -601,6 +667,9 @@ def run_one(
     shot_class_balance: bool = False,
     shot_cacl: bool = False,
     shot_cacl_temperature: float = 0.1,
+    shot_balanced_cap: bool = False,
+    shot_balanced_cap_ratio: float = 1.5,
+    shot_exclude_classes: tuple[str, ...] = (),
     eata_lr: float = 0.1,
     eata_e0_factor: float = 0.4,
     eata_d0: float = 0.05,
@@ -640,6 +709,8 @@ def run_one(
             div_weight=div_weight if div_weight > 0 else 1.0,
             aps=shot_aps, aps_k=shot_aps_k, aps_iters=shot_aps_iters, aps_gamma=shot_aps_gamma,
             class_balance=shot_class_balance, cacl=shot_cacl, cacl_temperature=shot_cacl_temperature,
+            balanced_cap=shot_balanced_cap, balanced_cap_ratio=shot_balanced_cap_ratio,
+            exclude_classes=shot_exclude_classes,
         )
     elif method == "eata":
         fisher, anchor = _compute_fisher(model_name, base_run_name, seed, img_size, device)
@@ -671,6 +742,10 @@ def run_one(
         run_name += "_cb"
     if method == "shot" and shot_cacl:
         run_name += "_cacl"
+    if method == "shot" and shot_balanced_cap:
+        run_name += f"_bcap{shot_balanced_cap_ratio:g}"
+    if method == "shot" and shot_exclude_classes:
+        run_name += f"_excl{len(shot_exclude_classes)}"
     if method == "eata" and (eata_e0_factor != 0.4 or eata_d0 != 0.05 or eata_fisher_alpha != 1.0):
         run_name += f"_e0{eata_e0_factor:g}_d0{eata_d0:g}_fa{eata_fisher_alpha:g}"
     if method == "rgv" and (rgv_rounds != 3 or rgv_align_weight != 0.3):
@@ -743,6 +818,21 @@ def main() -> None:
         "set 안에서 같은 pseudo-label끼리 feature를 당기는 contrastive loss (aps와 같이 쓰는 걸 권장)",
     )
     parser.add_argument("--shot-cacl-temperature", type=float, default=0.1, help="CACL 전용: contrastive loss temperature (논문 기본값 0.1)")
+    parser.add_argument(
+        "--shot-balanced-cap", action="store_true",
+        help="SHOT 전용: pseudo-label 클러스터링 단계에서 클래스별 할당 개수에 상한을 둬 "
+        "한 클래스로의 쏠림(Bangladesh의 Target_Spot 쏠림 등)을 억제한다 (class_balance와 독립적)",
+    )
+    parser.add_argument(
+        "--shot-balanced-cap-ratio", type=float, default=1.5,
+        help="balanced-cap 전용: 상한 = ceil(샘플 수 / 허용 클래스 수 * 이 값) (기본값 1.5)",
+    )
+    parser.add_argument(
+        "--shot-exclude-classes", type=str, default="",
+        help="SHOT 전용: pseudo-labeling·학습 손실에서 완전히 제외할 클래스 이름(CLASS_NAMES 기준, "
+        "쉼표로 구분). eval 시 마스킹에는 영향 없음 — oracle 진단에서 recall이 낮게 나온 구조적으로 "
+        "어려운 클래스를 빼고 나머지 클래스끼리 더 깨끗하게 분리시키려는 용도",
+    )
     parser.add_argument("--eata-lr", type=float, default=0.1, help="TENT/SHOT 기본값(1e-3)보다 훨씬 큼 — entropy 가중치·필터링으로 유효 gradient가 작아져서 같은 lr로는 거의 적응이 안 됨 (실측 확인)")
     parser.add_argument(
         "--eata-e0-factor", type=float, default=0.4,
@@ -788,6 +878,8 @@ def main() -> None:
                     shot_aps=args.shot_aps, shot_aps_k=args.shot_aps_k, shot_aps_iters=args.shot_aps_iters,
                     shot_aps_gamma=args.shot_aps_gamma, shot_class_balance=args.shot_class_balance,
                     shot_cacl=args.shot_cacl, shot_cacl_temperature=args.shot_cacl_temperature,
+                    shot_balanced_cap=args.shot_balanced_cap, shot_balanced_cap_ratio=args.shot_balanced_cap_ratio,
+                    shot_exclude_classes=tuple(c for c in args.shot_exclude_classes.split(",") if c),
                     eata_lr=args.eata_lr, eata_e0_factor=args.eata_e0_factor, eata_d0=args.eata_d0,
                     eata_fisher_alpha=args.eata_fisher_alpha,
                     rgv_rounds=args.rgv_rounds, rgv_lr=args.rgv_lr, rgv_cls_weight=args.rgv_cls_weight,
