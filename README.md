@@ -18,7 +18,7 @@
 | 5.6 | 해상도 × 리사이즈 보간법 튜닝 (tiny_cnn_c) | ✅ 완료 |
 | 6 | 최종 모델 선정 | ✅ 완료 — **tiny_cnn_c, 96px, bicubic 리사이즈** |
 | 7 | 웹 시스템 적용 | ✅ 프로토타입 완료 (`app/streamlit_app.py`, 모델 선택형) |
-| 8 | Domain Adaptation (AdaBN/TENT/SHOT/EATA/UPA/R-GV/AaD) | ✅ 완료 (3-seed 검증 완료) — 마스킹+SHOT(epoch=2) 조합이 최종 권장안(APS·데이터셋별 극단 튜닝·AaD 모두 noise/붕괴/무개선으로 기각), 데이터셋별 심층 진단 포함 (아래 참고) |
+| 8 | Domain Adaptation (AdaBN/TENT/SHOT/EATA/UPA/R-GV/AaD/CoWA) | ✅ 완료 (3-seed 검증 완료) — 마스킹+SHOT(epoch=2) 조합이 최종 권장안. SHOT+AaD 하이브리드가 seed42에서 Taiwan·Bangladesh 동시 개선을 보여 가장 유망하나 3-seed 검증 전. 데이터셋별 심층 진단 포함 (아래 참고) |
 
 진행 과정과 판단 근거를 상세히 정리한 슬라이드: `docs/CNN_토마토_병해분류_V2_진행보고.pptx`
 (2026-10-02 기준 28장 — 최종 모델 선정·seed 재현성·Domain Adaptation 최종 결과 반영)
@@ -475,11 +475,45 @@ AaD는 클러스터링이 전혀 없다 — feature 공간에서 k-최근접 이
 10%p 이상 낮다(disperse 항이 세질수록 소수 클래스 쪽 신호가 더 묻히는 것으로 보인다). Taiwan은
 seed42 기준 SHOT과 거의 동치(소수점 차이)지만, 이 프로젝트에서 이미 두 번(APS, 데이터셋별 극단
 튜닝) 확인했듯 **단일 seed에서의 "거의 동치"는 3-seed로 보면 어느 쪽으로든 뒤집힐 수 있어서**,
-굳이 3-seed 검증에 시간을 더 쓰기보다 여기서 멈춘다. AdaBN/TENT/EATA/UPA/R-GV/AaD까지 — 최신·
-유명 방법을 포함해 시도한 모든 대안이 결국 SHOT(epoch=2)을 넘지 못했고, 그 각각의 실패 이유가
-전부 다르다는 점(negative transfer, contrastive-loss 구조 불일치, alignment 손실의 역효과,
-disperse 항의 소수 클래스 희석)이 오히려 SHOT이 이 프로젝트 규모에 가장 안정적으로 맞는 방법
-이라는 결론을 거듭 뒷받침한다.
+굳이 3-seed 검증에 시간을 더 쓰기보다 여기서 멈춘다.
+
+### 추가 시도: CoWA-JMDS (ICML 2022) — soft weighting도 SHOT을 못 넘음
+
+Lee et al., *Confidence Score for Source-Free Unsupervised Domain Adaptation*, ICML 2022,
+공식 코드 [`Jhyun17/CoWA-JMDS`](https://github.com/Jhyun17/CoWA-JMDS). APS(상위 gamma%만 쓰고
+나머지는 버리는 하드 필터링)와 달리, 모든 샘플에 연속적인 soft weight를 매긴다 — SHOT의
+클래스 중심까지 거리를 클래스별 가우시안으로 보고 "이 샘플이 얼마나 전형적인지"(data score)를
+source 모델 자신의 확신도(model score)와 곱한(JMDS) 값을 cross-entropy 가중치로 쓴다(공식
+구현의 GMM 전체 적합을 이 프로젝트 규모에 맞춰 근사).
+
+| 데이터셋 | SHOT(최종) | CoWA(기본값) | CoWA(최선 하이퍼파라미터) |
+|---|---|---|---|
+| Taiwan | 42.04% | 39.17% | 39.81%(epoch=5) |
+| Bangladesh | **30.79%** | 31.15%(거의 동일) | — |
+| PlantDoc | **19.46%** | 16.78% | — |
+
+Bangladesh에서만 근소하게 앞섰고(0.36%p, noise 범위) 나머지는 SHOT보다 낮아 — 역시 기본
+파이프라인에는 포함하지 않는다.
+
+### 추가 시도: SHOT + AaD 하이브리드 — 지금까지 중 가장 유망하지만 아직 미검증
+
+AaD를 통째로 대체하는 대신, SHOT의 기존 pseudo-label CE + IM loss에 AaD의 attract/disperse
+항을 보조 손실로 얹어봤다(`--shot-aad-weight`). SHOT이 주는 분류 신호는 유지한 채, AaD가
+"feature 공간 이웃끼리는 예측도 비슷해야 한다"는 제약으로 pseudo-label 노이즈를 다듬어주길
+기대한 조합이다.
+
+| 데이터셋 | SHOT(최종) | SHOT+AaD(weight=1.0) | SHOT+AaD(weight=2.0) |
+|---|---|---|---|
+| Taiwan | 42.04%(F1 0.389) | 42.99%(F1 0.402) | **43.95%(F1 0.413)** |
+| Bangladesh | 30.79%(F1 0.261) | **32.15%(F1 0.271)** | — |
+| PlantDoc | 19.46%(F1 0.182) | 19.46%(F1 0.180, 거의 동일) | — |
+
+**지금까지 시도한 것 중 유일하게 Taiwan·Bangladesh 둘 다에서(같은 weight=1.0 기준으로) SHOT을
+동시에 앞섰고, PlantDoc은 해치지 않았다** — APS나 데이터셋별 극단 튜닝처럼 한 데이터셋에만
+맞춘 결과가 아니라는 점에서 이전 "가짜 개선"들과는 다른 패턴이다. **다만 이것도 seed42 단일
+실행 기준이고, 아직 3-seed 검증 전이다** — 이 프로젝트에서 이미 두 번(APS, 데이터셋별 극단
+튜닝) 확인했듯 단일 seed 결과만으로는 최종 채택 여부를 판단할 수 없다. 3-seed 검증은 추후
+과제로 남겨둔다.
 
 ### 연구 방향 재정리와 가설 검증
 

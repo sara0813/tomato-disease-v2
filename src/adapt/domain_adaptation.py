@@ -39,7 +39,7 @@ from evaluate.evaluate_external import evaluate_model_on_external  # noqa: E402
 from models import MODEL_BUILDERS, input_shape_for  # noqa: E402
 from utils.seed import set_seed  # noqa: E402
 
-METHODS = ("source", "adabn", "tent", "shot", "eata", "rgv", "aad")
+METHODS = ("source", "adabn", "tent", "shot", "eata", "rgv", "aad", "cowa")
 
 
 def class_mask_for(dataset_key: str, device) -> torch.Tensor:
@@ -329,6 +329,8 @@ def apply_shot(
     balanced_cap: bool = False,
     balanced_cap_ratio: float = 1.5,
     exclude_classes: tuple[str, ...] = (),
+    aad_weight: float = 0.0,
+    aad_k: int = 4,
 ) -> nn.Module:
     """SHOT (Liang et al., ICML 2020) 축소 적용. source classifier(head.fc)는 고정하고
     feature extractor(features)만 업데이트한다 — TENT(BN affine만 조금 흔드는 가장 약한 적응)보다
@@ -362,7 +364,13 @@ def apply_shot(
     (eval 시 최종 마스킹에는 영향 없음 — run_one()이 별도로 적용하는 class_mask는 그대로 전체
     허용 클래스를 쓴다). 이 클래스들이 "끌어당기는 자리"를 없애, 남은 클래스끼리는 더 깨끗하게
     분리되길 기대하는 접근 — Bangladesh의 Target_Spot/Bacterial_spot처럼 오라클 recall이 낮은
-    소수 클래스를 빼고 나머지 다수 클래스(지금 사례는 전체의 87%)에 집중한다."""
+    소수 클래스를 빼고 나머지 다수 클래스(지금 사례는 전체의 87%)에 집중한다.
+
+    aad_weight > 0이면 AaD(apply_aad 참고)의 attract/disperse 항을 SHOT의 기존 loss(pseudo-label
+    CE + IM)에 보조 항으로 더한다 — AaD를 통째로 대체하는 게 아니라, SHOT이 주는 분류 신호는
+    유지한 채 "feature 공간 이웃끼리는 예측도 비슷해야 한다"는 제약으로 pseudo-label 노이즈를
+    다듬어보려는 하이브리드. SHOT 단독(쏠림 문제)과 AaD 단독(신호 약함) 각각의 약점을 서로
+    보완할 수 있을지 확인하는 실험적 조합이다."""
     allowed_idx = sorted({CLASS_NAMES.index(c) for c in EXTERNAL_PRESENT_CLASSES[dataset_key]})
     class_mask = class_mask_for(dataset_key, device)
     num_classes = len(CLASS_NAMES)
@@ -404,6 +412,28 @@ def apply_shot(
         else:
             ce_weight = None
 
+        if aad_weight > 0:
+            with torch.no_grad():
+                aad_probs_list = []
+                for images, _ in target_loader:
+                    images = images.to(device)
+                    f = model.head.pool(model.features(images)).flatten(1)
+                    lg = model.head.fc(f) + pseudo_class_mask
+                    aad_probs_list.append(lg.softmax(dim=1))
+                aad_bank_probs = torch.cat(aad_probs_list)
+            n = pl_feats.size(0)
+            aad_k_eff = min(aad_k, n - 1)
+            aad_feats_n = F.normalize(pl_feats.to(device), dim=1)
+            aad_sims = aad_feats_n @ aad_feats_n.T
+            aad_sims.fill_diagonal_(-2.0)
+            aad_topk_sim, aad_topk_idx = aad_sims.topk(aad_k_eff, dim=1)
+            aad_topk_w = aad_topk_sim.softmax(dim=1)
+            aad_neighbor_mask = torch.zeros(n, n, dtype=torch.bool, device=device)
+            aad_neighbor_mask.scatter_(1, aad_topk_idx, torch.ones_like(aad_topk_idx, dtype=torch.bool))
+            aad_non_neighbor_mask = ~aad_neighbor_mask
+            aad_non_neighbor_mask.fill_diagonal_(False)
+            aad_non_neighbor_counts = aad_non_neighbor_mask.sum(dim=1).clamp(min=1).float()
+
         model.train()
         idx = 0
         for images, _ in target_loader:
@@ -411,6 +441,7 @@ def apply_shot(
             bsz = images.size(0)
             batch_pseudo = pseudo_labels[idx: idx + bsz].to(device)
             batch_confident = confident_mask[idx: idx + bsz].to(device)
+            batch_idx = torch.arange(idx, idx + bsz, device=device)
             idx += bsz
 
             optimizer.zero_grad()
@@ -427,6 +458,19 @@ def apply_shot(
                 cls_loss = images.new_zeros(())
             cl_loss = _contrastive_loss(feats, batch_pseudo, batch_confident, cacl_temperature) if cacl else 0.0
             loss = cl_loss + cls_loss_weight * cls_loss + im_loss  # UPA 식 10: L_CL + beta*L_CE + L_IM
+
+            if aad_weight > 0:
+                batch_topk_idx = aad_topk_idx[batch_idx]
+                batch_topk_w = aad_topk_w[batch_idx]
+                neighbor_probs = aad_bank_probs[batch_topk_idx]  # (bsz, k, C)
+                dot_ij = (probs.unsqueeze(1) * neighbor_probs).sum(dim=2)
+                attract = (batch_topk_w * dot_ij).sum(dim=1)
+                non_neigh_mask_batch = aad_non_neighbor_mask[batch_idx].float()
+                non_neigh_counts_batch = aad_non_neighbor_counts[batch_idx]
+                disperse = (probs @ aad_bank_probs.T) * non_neigh_mask_batch
+                disperse = disperse.sum(dim=1) / non_neigh_counts_batch
+                loss = loss + aad_weight * (-attract + disperse).mean()
+
             loss.backward()
             optimizer.step()
 
@@ -735,6 +779,107 @@ def apply_aad(
     return model
 
 
+def apply_cowa(
+    model: nn.Module,
+    target_loader,
+    device,
+    dataset_key: str,
+    epochs: int = 2,
+    lr: float = 1e-3,
+    cls_loss_weight: float = 0.3,
+    div_weight: float = 1.0,
+    model_weight_alpha: float = 0.5,
+) -> nn.Module:
+    """CoWA-JMDS — Lee et al., *Confidence Score for Source-Free Unsupervised Domain
+    Adaptation*, ICML 2022, 공식 코드 github.com/Jhyun17/CoWA-JMDS의 핵심 아이디어("Joint
+    Model-Data Score")를 축소 적용한다. APS처럼 신뢰도 상위 gamma%만 쓰고 나머지는 완전히
+    버리는 하드 필터링과 달리, 모든 샘플에 **연속적인 soft weight**를 매긴다 — 지금까지
+    시도한 APS(hard filtering)·balanced_cap(할당 개수 제한)·AaD(kNN attract/disperse) 전부
+    "이분법적으로 끊어내는" 접근이었는데, CoWA는 "얼마나 믿을지"를 점수로 매겨 전부 쓰는
+    세 번째 메커니즘이다.
+
+    data score: SHOT의 weighted k-means 결과(클래스 중심까지의 코사인 거리)를 클래스별
+    1-성분 가우시안으로 보고, 각 샘플이 자기 pseudo-label 클래스에 얼마나 "전형적인지"를
+    밀도로 추정한다(공식 구현은 전체 분포에 GMM을 적합하지만, 이 프로젝트 규모(300~1,100장)에
+    맞춰 이미 계산해둔 클래스 중심·코사인 거리로 근사했다).
+    model score: source 분류기 자신이 그 pseudo-label에 준 softmax confidence.
+    JMDS = model_score^alpha * data_score^(1-alpha) — 두 점수를 곱해 최종 가중치로 쓰고,
+    class_balance처럼 평균 1로 정규화해 cross-entropy에 곱한다."""
+    allowed_idx = sorted({CLASS_NAMES.index(c) for c in EXTERNAL_PRESENT_CLASSES[dataset_key]})
+    class_mask = class_mask_for(dataset_key, device)
+    num_classes = len(CLASS_NAMES)
+    disallowed = [i for i in range(num_classes) if i not in allowed_idx]
+
+    for p in model.parameters():
+        p.requires_grad_(False)
+    for p in model.features.parameters():
+        p.requires_grad_(True)
+    optimizer = torch.optim.Adam(model.features.parameters(), lr=lr)
+
+    for _ in range(epochs):
+        model.eval()
+        feats_list, probs_list = [], []
+        with torch.no_grad():
+            for images, _ in target_loader:
+                images = images.to(device)
+                f = model.head.pool(model.features(images)).flatten(1)
+                lg = model.head.fc(f) + class_mask
+                probs_list.append(lg.softmax(dim=1))
+                feats_list.append(f)
+        feats = torch.cat(feats_list)
+        probs = torch.cat(probs_list)
+
+        def assign_with_sims(weight: torch.Tensor):
+            centroids = (weight.T @ feats) / (weight.sum(dim=0).unsqueeze(1) + 1e-8)
+            feats_n = F.normalize(feats, dim=1)
+            centroids_n = F.normalize(centroids, dim=1)
+            sims = feats_n @ centroids_n.T
+            if disallowed:
+                sims[:, disallowed] = -1e9
+            return sims.argmax(dim=1), sims
+
+        pseudo, _ = assign_with_sims(probs)
+        pseudo, sims = assign_with_sims(F.one_hot(pseudo, num_classes).float())
+
+        own_sim = sims.gather(1, pseudo.unsqueeze(1)).squeeze(1)  # 자기 클래스 중심까지의 코사인 유사도
+        data_score = torch.ones_like(own_sim)
+        for c in allowed_idx:
+            idx_c = (pseudo == c).nonzero(as_tuple=True)[0]
+            if idx_c.numel() < 2:
+                continue
+            mean_c = own_sim[idx_c].mean()
+            var_c = own_sim[idx_c].var(unbiased=False).clamp(min=1e-4)
+            data_score[idx_c] = torch.exp(-((own_sim[idx_c] - mean_c) ** 2) / (2 * var_c))
+
+        model_score = probs.gather(1, pseudo.unsqueeze(1)).squeeze(1)
+        jmds = (model_score.clamp(min=1e-6) ** model_weight_alpha) * (data_score.clamp(min=1e-6) ** (1 - model_weight_alpha))
+        ce_weight = jmds / jmds.mean().clamp(min=1e-8)  # 평균 1로 정규화 (class_balance와 같은 패턴)
+
+        model.train()
+        idx = 0
+        for images, _ in target_loader:
+            images = images.to(device)
+            bsz = images.size(0)
+            batch_pseudo = pseudo[idx: idx + bsz].to(device)
+            batch_weight = ce_weight[idx: idx + bsz].to(device)
+            idx += bsz
+
+            optimizer.zero_grad()
+            batch_feats = model.head.pool(model.features(images)).flatten(1)
+            logits = model.head.fc(batch_feats) + class_mask
+            batch_probs = logits.softmax(dim=1)
+
+            im_loss = _entropy_of(batch_probs).mean() - div_weight * _entropy_of(batch_probs.mean(dim=0))
+            per_sample_ce = F.cross_entropy(logits, batch_pseudo, reduction="none")
+            cls_loss = (batch_weight * per_sample_ce).mean()
+            loss = im_loss + cls_loss_weight * cls_loss
+            loss.backward()
+            optimizer.step()
+
+    model.eval()
+    return model
+
+
 def run_one(
     method: str,
     model_name: str,
@@ -764,6 +909,8 @@ def run_one(
     shot_balanced_cap: bool = False,
     shot_balanced_cap_ratio: float = 1.5,
     shot_exclude_classes: tuple[str, ...] = (),
+    shot_aad_weight: float = 0.0,
+    shot_aad_k: int = 4,
     eata_lr: float = 0.1,
     eata_e0_factor: float = 0.4,
     eata_d0: float = 0.05,
@@ -778,18 +925,22 @@ def run_one(
     aad_lr: float = 1e-3,
     aad_k: int = 4,
     aad_disperse_weight: float = 1.0,
+    cowa_epochs: int = 2,
+    cowa_lr: float = 1e-3,
+    cowa_cls_weight: float = 0.3,
+    cowa_alpha: float = 0.5,
 ) -> dict:
     """masked=True면 class_mask_for()로 target에 없는 클래스를 가린다.
     TENT는 적응 단계(entropy 손실)에도 마스크를 넣어 mask-aware하게 적응하고,
     AdaBN은 통계 재계산 자체가 loss-free라 적응 단계는 그대로 두고 최종 평가에만 마스크를 적용한다.
-    SHOT·EATA·R-GV·AaD는 마스킹이 방법 자체에 내장돼 있어 masked 인자와 무관하게 항상 적용된다.
+    SHOT·EATA·R-GV·AaD·CoWA는 마스킹이 방법 자체에 내장돼 있어 masked 인자와 무관하게 항상 적용된다.
 
     div_weight: TENT 전용, >0이면 diversity 정규화(collapse 방지)를 추가한다.
     adabn_blend_momentum: AdaBN 전용, 주면 완전 교체 대신 해당 momentum으로 source/target 통계를 블렌딩한다."""
     set_seed(seed)
     model = load_base_model(model_name, base_run_name, seed, img_size, device)
     loader = make_external_dataloader(data_dir, img_size, batch_size, interpolation=INTERPOLATION_MODES[interp])
-    masked = masked or method in ("shot", "eata", "rgv", "aad")
+    masked = masked or method in ("shot", "eata", "rgv", "aad", "cowa")
     class_mask = class_mask_for(dataset_key, device) if masked else None
 
     t0 = time.time()
@@ -808,7 +959,7 @@ def run_one(
             aps=shot_aps, aps_k=shot_aps_k, aps_iters=shot_aps_iters, aps_gamma=shot_aps_gamma,
             class_balance=shot_class_balance, cacl=shot_cacl, cacl_temperature=shot_cacl_temperature,
             balanced_cap=shot_balanced_cap, balanced_cap_ratio=shot_balanced_cap_ratio,
-            exclude_classes=shot_exclude_classes,
+            exclude_classes=shot_exclude_classes, aad_weight=shot_aad_weight, aad_k=shot_aad_k,
         )
     elif method == "eata":
         fisher, anchor = _compute_fisher(model_name, base_run_name, seed, img_size, device)
@@ -825,6 +976,11 @@ def run_one(
         model = apply_aad(
             model, loader, device, dataset_key, epochs=aad_epochs, lr=aad_lr, k=aad_k,
             disperse_weight=aad_disperse_weight,
+        )
+    elif method == "cowa":
+        model = apply_cowa(
+            model, loader, device, dataset_key, epochs=cowa_epochs, lr=cowa_lr,
+            cls_loss_weight=cowa_cls_weight, model_weight_alpha=cowa_alpha,
         )
     else:
         raise ValueError(f"알 수 없는 method: {method}")
@@ -849,12 +1005,16 @@ def run_one(
         run_name += f"_bcap{shot_balanced_cap_ratio:g}"
     if method == "shot" and shot_exclude_classes:
         run_name += f"_excl{len(shot_exclude_classes)}"
+    if method == "shot" and shot_aad_weight > 0:
+        run_name += f"_aadw{shot_aad_weight:g}_aadk{shot_aad_k}"
     if method == "eata" and (eata_e0_factor != 0.4 or eata_d0 != 0.05 or eata_fisher_alpha != 1.0):
         run_name += f"_e0{eata_e0_factor:g}_d0{eata_d0:g}_fa{eata_fisher_alpha:g}"
     if method == "rgv" and (rgv_rounds != 3 or rgv_align_weight != 0.3):
         run_name += f"_r{rgv_rounds}_aw{rgv_align_weight:g}"
     if method == "aad" and (aad_epochs != 2 or aad_k != 4 or aad_disperse_weight != 1.0):
         run_name += f"_ep{aad_epochs}_k{aad_k}_dw{aad_disperse_weight:g}"
+    if method == "cowa" and (cowa_epochs != 2 or cowa_cls_weight != 0.3 or cowa_alpha != 0.5):
+        run_name += f"_ep{cowa_epochs}_cw{cowa_cls_weight:g}_a{cowa_alpha:g}"
     metrics = evaluate_model_on_external(
         model, model_name, run_name, dataset_key, data_dir, img_size, interp, seed, device, batch_size,
         class_mask=class_mask,
@@ -938,6 +1098,11 @@ def main() -> None:
         "쉼표로 구분). eval 시 마스킹에는 영향 없음 — oracle 진단에서 recall이 낮게 나온 구조적으로 "
         "어려운 클래스를 빼고 나머지 클래스끼리 더 깨끗하게 분리시키려는 용도",
     )
+    parser.add_argument(
+        "--shot-aad-weight", type=float, default=0.0,
+        help="SHOT 전용: AaD(attract/disperse)를 보조 손실로 추가할 가중치(0이면 비활성, SHOT+AaD 하이브리드)",
+    )
+    parser.add_argument("--shot-aad-k", type=int, default=4, help="SHOT+AaD 하이브리드 전용: attract 대상 최근접 이웃 수")
     parser.add_argument("--eata-lr", type=float, default=0.1, help="TENT/SHOT 기본값(1e-3)보다 훨씬 큼 — entropy 가중치·필터링으로 유효 gradient가 작아져서 같은 lr로는 거의 적응이 안 됨 (실측 확인)")
     parser.add_argument(
         "--eata-e0-factor", type=float, default=0.4,
@@ -964,6 +1129,10 @@ def main() -> None:
     parser.add_argument("--aad-lr", type=float, default=1e-3)
     parser.add_argument("--aad-k", type=int, default=4, help="AaD 전용: attract 대상 최근접 이웃 수")
     parser.add_argument("--aad-disperse-weight", type=float, default=1.0, help="AaD 전용: disperse(비-이웃과 멀어지기) 항 가중치")
+    parser.add_argument("--cowa-epochs", type=int, default=2, help="CoWA 전용: 적응 epoch 수")
+    parser.add_argument("--cowa-lr", type=float, default=1e-3)
+    parser.add_argument("--cowa-cls-weight", type=float, default=0.3, help="CoWA 전용: JMDS 가중 cross-entropy 항의 가중치")
+    parser.add_argument("--cowa-alpha", type=float, default=0.5, help="CoWA 전용: JMDS = model_score^alpha * data_score^(1-alpha)")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -989,6 +1158,7 @@ def main() -> None:
                     shot_cacl=args.shot_cacl, shot_cacl_temperature=args.shot_cacl_temperature,
                     shot_balanced_cap=args.shot_balanced_cap, shot_balanced_cap_ratio=args.shot_balanced_cap_ratio,
                     shot_exclude_classes=tuple(c for c in args.shot_exclude_classes.split(",") if c),
+                    shot_aad_weight=args.shot_aad_weight, shot_aad_k=args.shot_aad_k,
                     eata_lr=args.eata_lr, eata_e0_factor=args.eata_e0_factor, eata_d0=args.eata_d0,
                     eata_fisher_alpha=args.eata_fisher_alpha,
                     rgv_rounds=args.rgv_rounds, rgv_lr=args.rgv_lr, rgv_cls_weight=args.rgv_cls_weight,
@@ -996,6 +1166,8 @@ def main() -> None:
                     rgv_end_ratio=args.rgv_end_ratio,
                     aad_epochs=args.aad_epochs, aad_lr=args.aad_lr, aad_k=args.aad_k,
                     aad_disperse_weight=args.aad_disperse_weight,
+                    cowa_epochs=args.cowa_epochs, cowa_lr=args.cowa_lr, cowa_cls_weight=args.cowa_cls_weight,
+                    cowa_alpha=args.cowa_alpha,
                 )
             )
 
