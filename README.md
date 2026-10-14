@@ -21,7 +21,8 @@
 | 8 | Domain Adaptation (AdaBN/TENT/SHOT/EATA/UPA/R-GV/AaD/CoWA) | ✅ 완료 (3-seed 검증 완료) — 마스킹+SHOT(epoch=2)+AaD(weight=1.0) 하이브리드가 최종 권장안(Bangladesh 3-seed 평균 +3.1%p, 분산도 감소). 데이터셋별 심층 진단 포함 (아래 참고) |
 
 진행 과정과 판단 근거를 상세히 정리한 슬라이드: `docs/CNN_토마토_병해분류_V2_진행보고.pptx`
-(2026-10-02 기준 28장 — 최종 모델 선정·seed 재현성·Domain Adaptation 최종 결과 반영)
+(2026-10-15 기준 31장 — 최종 모델 선정·seed 재현성·Domain Adaptation 최종 결과(SHOT+AaD, 60% 목표 현실성 포함) 반영,
+결과 중심으로 재구성됨)
 
 ## 연구 질문
 
@@ -653,8 +654,9 @@ train과 test에 나뉘어 들어가면 내부 테스트 정확도가 "새 이�
    차이가 크지 않음을 확인했다(±2%p 이내).
 5. `check_leakage.py` 재검증 결과: 완전 동일 이미지 0건(기존 test-train 3건, val-train 4건 → 0).
 
-**향후 계획:** seed 123, 2026 반복실험도 이 새 split(그룹 단위)을 그대로 사용한다. 구 결과
-(`seed42_predup/`)는 비교 근거로 당분간 남겨두고, 정리가 끝나면 삭제할 예정이다.
+**완료:** seed 123, 2026 반복실험도 이 새 split(그룹 단위)을 그대로 사용해 전부 재현성 검증을
+마쳤다(위 "3-seed 검증 결과" 등 참고). 구 결과(`seed42_predup/`)는 leakage 수정 전/후 비교
+근거로 계속 남겨둔다(삭제하지 않음).
 
 ## 폴더 구조
 
