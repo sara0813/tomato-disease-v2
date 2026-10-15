@@ -530,6 +530,43 @@ SHOT 단독과 평균이 거의 같아 해치지는 않으므로, **이 프로�
 "마스킹 + SHOT(epoch=2) +
 AaD(weight=1.0)"로 갱신한다.**
 
+### 최종 채택 이후 추가 탐색 — Prototype 개선·TTA도 못 넘음
+
+SHOT+AaD를 최종 채택한 뒤, 이를 더 밀어올릴 수 있는지 서로 다른 메커니즘 두 가지를 더
+시도했다. `_shot_pseudo_labels`에 구현돼 있고(`--shot-confident-prototype-frac`,
+`--shot-prototype-sharpen-gamma`, `--shot-tta-hflip`), 전부 기본 파이프라인에는 포함하지 않는다.
+
+**① Confident-prototype (hard 필터링)**: 클래스 중심을 전체 가중 평균이 아니라 "확신도 상위
+frac 비율 샘플만의 단순 평균"으로 구한다 — Bangladesh의 Late_blight→Target_Spot 쏠림과 Taiwan의
+healthy 블라인드스팟이 애매한 샘플이 중심을 오염시켜 생긴다는 가설에서 나왔다. seed42·frac=0.5
+결과는 인상적이었다 — **Taiwan의 healthy recall이 0%→34.9%로 실제로 올랐다**(precision 84%,
+accuracy 45.22%). 하지만 **3-seed 검증 결과 seed123이 17.52%(3클래스 랜덤 확률보다도 낮음)로
+완전히 붕괴했다**(3-seed 평균 31.85% ±11.33, 기존 SHOT·SHOT+AaD보다도 낮음) — 작은/애매한
+클래스는 "확신 있는 멤버"가 seed에 따라 아예 없거나 전부 오답일 수 있어, 중심 자체가 비거나
+오염된다는 뜻이다. Bangladesh에서도 Target_Spot이 precision·recall 0%로 완전히 사라졌다
+(frac=0.3 기준). **기각.**
+
+**② Prototype-sharpen (soft 거듭제곱)**: hard 필터링 대신 weight(softmax 확률)를 gamma제곱해
+확신도 높은 샘플의 영향력만 부드럽게 키운다(작은 클래스가 통째로 사라지는 위험을 줄이려는
+의도). seed42 기준 극단적으로 무너지진 않았지만(Taiwan 40.5~42.4%, Bangladesh 29.8~30.1%,
+PlantDoc 18.3%) 어디서도 SHOT+AaD를 넘지 못해, 3-seed 검증 없이 기각했다.
+
+**③ TTA(좌우반전 평균)**: pseudo-label을 만들 때 원본과 좌우반전 이미지의 feature·softmax를
+평균해 입력 노이즈를 줄인다(클러스터링 알고리즘이 아니라 입력 신호 쪽을 개선하는 접근). TTA
+단독은 Bangladesh만 소폭 개선(30.79%→31.70%)했고 Taiwan·PlantDoc은 내려갔다. AaD와 결합하면
+Bangladesh는 거의 그대로(32.15%→32.33%, noise 범위)인데 Taiwan은 오히려 떨어졌다(42.99%→39.49%).
+3-seed 검증 없이 기각했다.
+
+**④ (참고) SHOT+AaD, Taiwan epoch=7**: 앞서 "SHOT epoch 수를 어떻게 정했나" 절에서 본 epoch
+민감도가 AaD를 더해도 유지되는지 확인차 Taiwan만 epoch=7로 3-seed 검증했다 — 결과는
+43.42% ±10.52(seed42=57.96/seed123=38.85/seed2026=33.44). epoch=2 기준(38.11% ±5.81)보다
+평균은 높지만 표준편차도 거의 2배라, n=3로는 "진짜 개선"이라고 확신하기 어렵다. 당장 채택하지
+않고 참고 기록으로만 남긴다.
+
+**지금까지 시도한 8개 방향(APS, 데이터셋별 극단 튜닝, AaD 단독, CoWA, SHOT+AaD, confident-prototype,
+prototype-sharpen, TTA) 중 3-seed 검증을 통과해 실제로 채택된 것은 SHOT+AaD(weight=1.0, 공통)
+하나뿐이다.**
+
 ### 연구 방향 재정리와 가설 검증
 
 지금까지의 진단(심층 진단 절)과 추가 시도(UPA/R-GV/EATA/UCon-SFDA 절) 결과를 바탕으로, 이 프로젝트의

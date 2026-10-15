@@ -196,13 +196,32 @@ def _balanced_assign(sims: torch.Tensor, allowed_idx, disallowed, cap_ratio: flo
 def _shot_pseudo_labels(
     model, loader, device, allowed_idx, class_mask, num_classes, return_feats: bool = False,
     balanced_cap_ratio: float | None = None,
+    confident_prototype_frac: float | None = None,
+    prototype_sharpen_gamma: float | None = None,
+    tta_hflip: bool = False,
 ):
     """SHOT 논문의 weighted k-means pseudo-labeling을 축소 적용한다. target 존재 클래스
     제한(allowed_idx)은 class_info.py 매핑표(설계 단계부터 알려진 정보)에서 온 것이지
     target ground truth를 보고 정한 게 아니다. 1차: 분류기 softmax를 가중치 삼아 클래스별
     중심(centroid)을 구하고 코사인 거리로 재할당 → 2차: 그 결과(one-hot)로 중심을 다시 구해
     한 번 더 재할당한다(논문의 2-step 절차). balanced_cap_ratio가 주어지면 각 단계의 재할당에
-    _balanced_assign으로 클래스별 상한을 적용한다."""
+    _balanced_assign으로 클래스별 상한을 적용한다.
+
+    confident_prototype_frac이 주어지면 중심을 "전체 샘플의 가중 평균"이 아니라 "그 클래스에
+    가장 확신 있게 할당된 상위 frac 비율 샘플만의 단순 평균"으로 구한다(hard 필터링) — 애매한
+    샘플을 완전히 배제한다. **3-seed 검증 결과 Taiwan에서 seed마다 완전히 다른 결과(45%/17%/33%)를
+    내는 등 너무 불안정해 기각했다** — 작은/애매한 클래스는 "확신 있는 멤버"가 seed에 따라
+    아예 없거나 전부 틀린 샘플일 수 있어, 중심 자체가 통째로 사라지거나 오염된다.
+
+    prototype_sharpen_gamma가 주어지면 그 대신 weight(softmax 확률)를 gamma제곱으로 부드럽게
+    강조한다(weight**gamma, gamma>1이면 확신도 높은 샘플의 영향력만 키우고 낮은 샘플도 완전히
+    0은 아님) — hard 필터링처럼 불연속적으로 끊어내지 않아 작은 클래스가 통째로 사라지는 위험이
+    적다. 확신도는 1차에서는 source softmax 확률, 2차에서는 직전 라운드의 코사인 유사도를 쓴다.
+
+    tta_hflip=True면 pseudo-label을 만들 때 원본 이미지와 좌우반전 버전을 각각 forward해
+    feature·softmax를 평균한다 — 클러스터링 알고리즘이 아니라 입력 신호 자체의 noise를 줄여서,
+    한 번의(어쩌면 비정상적인) forward pass에 pseudo-label 품질이 휘둘리는 것을 완화하려는
+    시도. 잎사귀 사진은 좌우 방향이 병해 판정에 의미가 없어 안전한 증강이다."""
     model.eval()
     feats_list, probs_list = [], []
     with torch.no_grad():
@@ -210,25 +229,53 @@ def _shot_pseudo_labels(
             images = images.to(device)
             feats = model.head.pool(model.features(images)).flatten(1)
             logits = model.head.fc(feats) + class_mask
-            probs_list.append(logits.softmax(dim=1))
+            probs = logits.softmax(dim=1)
+            if tta_hflip:
+                images_flip = torch.flip(images, dims=[3])
+                feats_flip = model.head.pool(model.features(images_flip)).flatten(1)
+                logits_flip = model.head.fc(feats_flip) + class_mask
+                probs_flip = logits_flip.softmax(dim=1)
+                feats = (feats + feats_flip) / 2
+                probs = (probs + probs_flip) / 2
+            probs_list.append(probs)
             feats_list.append(feats)
     feats = torch.cat(feats_list)
     probs = torch.cat(probs_list)
     disallowed = [i for i in range(num_classes) if i not in allowed_idx]
 
-    def assign(weight: torch.Tensor) -> torch.Tensor:
-        centroids = (weight.T @ feats) / (weight.sum(dim=0).unsqueeze(1) + 1e-8)
+    def compute_centroids(weight: torch.Tensor, confidence: torch.Tensor) -> torch.Tensor:
+        if prototype_sharpen_gamma is not None:
+            weight = weight.clamp(min=1e-8) ** prototype_sharpen_gamma
+        if confident_prototype_frac is None:
+            return (weight.T @ feats) / (weight.sum(dim=0).unsqueeze(1) + 1e-8)
+        hard = weight.argmax(dim=1)
+        centroids = torch.zeros(num_classes, feats.size(1), device=feats.device, dtype=feats.dtype)
+        for c in allowed_idx:
+            idx_c = (hard == c).nonzero(as_tuple=True)[0]
+            if idx_c.numel() == 0:
+                continue
+            n_keep = max(1, int(round(idx_c.numel() * confident_prototype_frac)))
+            top_local = confidence[idx_c].topk(min(n_keep, idx_c.numel())).indices
+            centroids[c] = feats[idx_c[top_local]].mean(dim=0)
+        return centroids
+
+    def assign(weight: torch.Tensor, confidence: torch.Tensor):
+        centroids = compute_centroids(weight, confidence)
         feats_n = F.normalize(feats, dim=1)
         centroids_n = F.normalize(centroids, dim=1)
         sims = feats_n @ centroids_n.T
         if disallowed:
             sims[:, disallowed] = -1e9
         if balanced_cap_ratio is not None:
-            return _balanced_assign(sims, allowed_idx, disallowed, balanced_cap_ratio)
-        return sims.argmax(dim=1)
+            labels = _balanced_assign(sims, allowed_idx, disallowed, balanced_cap_ratio)
+        else:
+            labels = sims.argmax(dim=1)
+        own_sim = sims.gather(1, labels.unsqueeze(1)).squeeze(1)
+        return labels, own_sim
 
-    pseudo = assign(probs)
-    pseudo = assign(F.one_hot(pseudo, num_classes).float())
+    conf0 = probs.max(dim=1).values
+    pseudo, sim1 = assign(probs, conf0)
+    pseudo, _ = assign(F.one_hot(pseudo, num_classes).float(), sim1)
     if return_feats:
         return pseudo.cpu(), feats.cpu()
     return pseudo.cpu()
@@ -331,6 +378,9 @@ def apply_shot(
     exclude_classes: tuple[str, ...] = (),
     aad_weight: float = 0.0,
     aad_k: int = 4,
+    confident_prototype_frac: float | None = None,
+    prototype_sharpen_gamma: float | None = None,
+    tta_hflip: bool = False,
 ) -> nn.Module:
     """SHOT (Liang et al., ICML 2020) 축소 적용. source classifier(head.fc)는 고정하고
     feature extractor(features)만 업데이트한다 — TENT(BN affine만 조금 흔드는 가장 약한 적응)보다
@@ -370,7 +420,9 @@ def apply_shot(
     CE + IM)에 보조 항으로 더한다 — AaD를 통째로 대체하는 게 아니라, SHOT이 주는 분류 신호는
     유지한 채 "feature 공간 이웃끼리는 예측도 비슷해야 한다"는 제약으로 pseudo-label 노이즈를
     다듬어보려는 하이브리드. SHOT 단독(쏠림 문제)과 AaD 단독(신호 약함) 각각의 약점을 서로
-    보완할 수 있을지 확인하는 실험적 조합이다."""
+    보완할 수 있을지 확인하는 실험적 조합이다.
+
+    confident_prototype_frac/prototype_sharpen_gamma/tta_hflip: _shot_pseudo_labels 참고."""
     allowed_idx = sorted({CLASS_NAMES.index(c) for c in EXTERNAL_PRESENT_CLASSES[dataset_key]})
     class_mask = class_mask_for(dataset_key, device)
     num_classes = len(CLASS_NAMES)
@@ -393,6 +445,8 @@ def apply_shot(
         pseudo_labels, pl_feats = _shot_pseudo_labels(
             model, target_loader, device, pseudo_allowed_idx, pseudo_class_mask, num_classes, return_feats=True,
             balanced_cap_ratio=balanced_cap_ratio if balanced_cap else None,
+            confident_prototype_frac=confident_prototype_frac,
+            prototype_sharpen_gamma=prototype_sharpen_gamma, tta_hflip=tta_hflip,
         )
         if aps:
             pseudo_labels, confident_mask = _aps_refine(
@@ -911,6 +965,9 @@ def run_one(
     shot_exclude_classes: tuple[str, ...] = (),
     shot_aad_weight: float = 0.0,
     shot_aad_k: int = 4,
+    shot_confident_prototype_frac: float | None = None,
+    shot_prototype_sharpen_gamma: float | None = None,
+    shot_tta_hflip: bool = False,
     eata_lr: float = 0.1,
     eata_e0_factor: float = 0.4,
     eata_d0: float = 0.05,
@@ -960,6 +1017,8 @@ def run_one(
             class_balance=shot_class_balance, cacl=shot_cacl, cacl_temperature=shot_cacl_temperature,
             balanced_cap=shot_balanced_cap, balanced_cap_ratio=shot_balanced_cap_ratio,
             exclude_classes=shot_exclude_classes, aad_weight=shot_aad_weight, aad_k=shot_aad_k,
+            confident_prototype_frac=shot_confident_prototype_frac,
+            prototype_sharpen_gamma=shot_prototype_sharpen_gamma, tta_hflip=shot_tta_hflip,
         )
     elif method == "eata":
         fisher, anchor = _compute_fisher(model_name, base_run_name, seed, img_size, device)
@@ -1007,6 +1066,12 @@ def run_one(
         run_name += f"_excl{len(shot_exclude_classes)}"
     if method == "shot" and shot_aad_weight > 0:
         run_name += f"_aadw{shot_aad_weight:g}_aadk{shot_aad_k}"
+    if method == "shot" and shot_confident_prototype_frac is not None:
+        run_name += f"_cpf{shot_confident_prototype_frac:g}"
+    if method == "shot" and shot_prototype_sharpen_gamma is not None:
+        run_name += f"_psg{shot_prototype_sharpen_gamma:g}"
+    if method == "shot" and shot_tta_hflip:
+        run_name += "_tta"
     if method == "eata" and (eata_e0_factor != 0.4 or eata_d0 != 0.05 or eata_fisher_alpha != 1.0):
         run_name += f"_e0{eata_e0_factor:g}_d0{eata_d0:g}_fa{eata_fisher_alpha:g}"
     if method == "rgv" and (rgv_rounds != 3 or rgv_align_weight != 0.3):
@@ -1102,6 +1167,21 @@ def main() -> None:
         "--shot-aad-weight", type=float, default=0.0,
         help="SHOT 전용: AaD(attract/disperse)를 보조 손실로 추가할 가중치(0이면 비활성, SHOT+AaD 하이브리드)",
     )
+    parser.add_argument(
+        "--shot-confident-prototype-frac", type=float, default=None,
+        help="SHOT 전용: 클래스 중심을 전체 가중 평균 대신 확신도 상위 이 비율(0~1) 샘플만의 "
+        "단순 평균으로 구한다(미지정 시 기존 SHOT 방식 그대로)",
+    )
+    parser.add_argument(
+        "--shot-prototype-sharpen-gamma", type=float, default=None,
+        help="SHOT 전용: weight(softmax 확률)를 이 값만큼 거듭제곱해 확신도 높은 샘플의 "
+        "영향력을 부드럽게 강조한다(1보다 크면 강조, 미지정 시 기존 SHOT 방식 그대로)",
+    )
+    parser.add_argument(
+        "--shot-tta-hflip", action="store_true",
+        help="SHOT 전용: pseudo-label 생성 시 원본+좌우반전 이미지의 feature·softmax를 평균해 "
+        "입력 noise를 줄인다",
+    )
     parser.add_argument("--shot-aad-k", type=int, default=4, help="SHOT+AaD 하이브리드 전용: attract 대상 최근접 이웃 수")
     parser.add_argument("--eata-lr", type=float, default=0.1, help="TENT/SHOT 기본값(1e-3)보다 훨씬 큼 — entropy 가중치·필터링으로 유효 gradient가 작아져서 같은 lr로는 거의 적응이 안 됨 (실측 확인)")
     parser.add_argument(
@@ -1159,6 +1239,9 @@ def main() -> None:
                     shot_balanced_cap=args.shot_balanced_cap, shot_balanced_cap_ratio=args.shot_balanced_cap_ratio,
                     shot_exclude_classes=tuple(c for c in args.shot_exclude_classes.split(",") if c),
                     shot_aad_weight=args.shot_aad_weight, shot_aad_k=args.shot_aad_k,
+                    shot_confident_prototype_frac=args.shot_confident_prototype_frac,
+                    shot_prototype_sharpen_gamma=args.shot_prototype_sharpen_gamma,
+                    shot_tta_hflip=args.shot_tta_hflip,
                     eata_lr=args.eata_lr, eata_e0_factor=args.eata_e0_factor, eata_d0=args.eata_d0,
                     eata_fisher_alpha=args.eata_fisher_alpha,
                     rgv_rounds=args.rgv_rounds, rgv_lr=args.rgv_lr, rgv_cls_weight=args.rgv_cls_weight,
