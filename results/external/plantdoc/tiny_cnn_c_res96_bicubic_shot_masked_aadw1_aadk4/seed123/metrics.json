@@ -7,7 +7,7 @@
   ],
   "interp": "bicubic",
   "dataset": "plantdoc",
-  "n_total": 709,
+  "n_total": 701,
   "n_classes_present": 8,
   "classes_present": [
     "Tomato___Bacterial_spot",
@@ -19,7 +19,7 @@
     "Tomato___Tomato_mosaic_virus",
     "Tomato___healthy"
   ],
-  "accuracy": 0.17489421720733428,
-  "macro_f1": 0.1682049573219581,
-  "weighted_f1": 0.16323995562825183
+  "accuracy": 0.16690442225392296,
+  "macro_f1": 0.15928793793071566,
+  "weighted_f1": 0.15861758021189432
 }

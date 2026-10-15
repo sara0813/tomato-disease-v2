@@ -28,6 +28,9 @@ SOURCE_SPLITS = ["train", "test"]
 
 # 콘택트시트 수작업 검수로 확인한 "잎 사진이 아닌" 이미지 (진단표/비교 콜라주/삽화/문서).
 # "<split>/<plantdoc 폴더>/<파일명>" 형식, 폴더명은 프로젝트 규칙대로 공백 유지(원본 그대로).
+# 2026-10-15: 콘택트시트를 다시 만들어 전체 744장(원본 746장 - spider mites 2장)을 전수
+# 재검수했다(src/data_prep/_archive 없음 — 1회성 재검수 스크립트, 결과만 반영). 기존 35장은
+# 전부 맞았고, 추가로 8장을 더 찾아 아래에 "2026-10-15 재검수 추가"로 표시해 넣었다.
 PLANTDOC_EXCLUDE_FILES = {
     # Tomato leaf mosaic virus
     r"train\Tomato leaf mosaic virus\Tomato-brown-rugose-fruit-virus-ToBRFV-infected-tomato-Solanum-lycopersicum-plants_Q320.jpg",
@@ -37,6 +40,7 @@ PLANTDOC_EXCLUDE_FILES = {
     r"train\Tomato leaf\9bfac1dea7f401e3b379dab33f535bb4.jpg",
     r"train\Tomato leaf\L.peruv-assort.jpg",
     r"test\Tomato leaf\2013-08-20-06.jpg",
+    r"train\Tomato leaf\stock-vector-set-of-vector-elements-for-your-design-red-ripe-tomatoes-with-water-drops-tomato-leaves-and-tomato-203297116.jpg",  # 2026-10-15 재검수 추가: 벡터 일러스트
     # Tomato leaf yellow virus
     r"train\Tomato leaf yellow virus\IU-TYLCV_img_6.jpg",
     r"train\Tomato leaf yellow virus\tomato-yellow-leaf-curl-disease.jpg",
@@ -45,14 +49,20 @@ PLANTDOC_EXCLUDE_FILES = {
     r"train\Tomato leaf yellow virus\tylcv-seminar-1-638.jpg",
     r"test\Tomato leaf yellow virus\glyphosate.jpg",
     r"test\Tomato leaf yellow virus\tylcv-seminar-1-638.jpg",
+    r"train\Tomato leaf yellow virus\role-of-whitefly-in-plant-virus-transmission-by-pmanikandan-13-638.jpg",  # 2026-10-15 재검수 추가: 발표 슬라이드
+    r"train\Tomato leaf yellow virus\role-of-whitefly-in-plant-virus-transmission-by-pmanikandan-25-638.jpg",  # 2026-10-15 재검수 추가: 발표 슬라이드(같은 덱)
     # Tomato mold leaf
     r"train\Tomato mold leaf\Leaf+Mold+lower+leaf+surface+spores+%28conidia%29.jpg",
     r"train\Tomato mold leaf\Leaf+Mold+upper+leaf+surface.jpg",
     r"train\Tomato mold leaf\top-leaf-mold-Fulva-fulvea-WN.jpg",
     r"test\Tomato mold leaf\50%20Leafmold%20Top.jpg",
+    r"train\Tomato mold leaf\tylc.jpg",  # 2026-10-15 재검수 추가: 다른 병(TYLCV) 콜라주가 잘못 들어감
+    r"test\Tomato mold leaf\black_leaf_mold_in_zina_tina.jpg",  # 2026-10-15 재검수 추가: 보고서 표지
     # Tomato Early blight leaf
     r"train\Tomato Early blight leaf\tomato_blight_early.jpg",
     r"test\Tomato Early blight leaf\039b47d574bc4bb8a14259a1cd96a741.jpg",
+    r"train\Tomato Early blight leaf\early-blight-in-tomatoes.jpg",  # 2026-10-15 재검수 추가: 책/잡지 표지
+    r"train\Tomato Early blight leaf\Tomato-Early-Blight-Leaf-Examples-Cornell-University.jpg",  # 2026-10-15 재검수 추가: 대학 강의자료
     # Tomato Septoria leaf spot
     r"train\Tomato Septoria leaf spot\3-septoria-leaf-blight-n.jpg",
     r"train\Tomato Septoria leaf spot\46-Septoria-leaf-spot.jpg",
@@ -70,6 +80,7 @@ PLANTDOC_EXCLUDE_FILES = {
     r"train\Tomato leaf bacterial spot\BacterialSpot06.jpg",
     r"train\Tomato leaf bacterial spot\BacterialSpot07.jpg",
     r"test\Tomato leaf bacterial spot\%2320+Bacterial+Spot+and+Speck.jpg",
+    r"test\Tomato leaf bacterial spot\07.17.18-Common_Tomato_Diseases_Canker-258x300.jpg",  # 2026-10-15 재검수 추가: 블로그 포스트 이미지
     # Tomato leaf late blight
     r"train\Tomato leaf late blight\Late_Blight_2.jpg",
 }

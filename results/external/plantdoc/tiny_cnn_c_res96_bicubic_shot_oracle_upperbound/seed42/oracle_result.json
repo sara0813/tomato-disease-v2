@@ -1,8 +1,8 @@
 {
   "dataset": "plantdoc",
-  "n_train": 496,
-  "n_eval": 213,
-  "source_acc_on_eval_split": 0.2347417840375587,
-  "oracle_shot_acc_on_eval_split": 0.2347417840375587,
+  "n_train": 490,
+  "n_eval": 211,
+  "source_acc_on_eval_split": 0.2559241706161137,
+  "oracle_shot_acc_on_eval_split": 0.23222748815165878,
   "note": "target label을 fine-tuning에 직접 사용한 진단 전용 상한 실험 — 정상 SFDA 결과 아님"
 }

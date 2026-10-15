@@ -324,17 +324,6 @@ feature space의 구조적 불일치)이다. alignment를 끄고 progressive sel
 줘도 안 변함)와 일관된다 — **표현력 자체가 부족한 상황에서는 pseudo-label을 다듬는 방향이든,
 feature를 재정렬하는 방향이든, 우리가 시도한 방식으로는 돌파가 안 됐다.**
 
-### 검토만 하고 구현은 보류: UCon-SFDA
-
-Xu et al., *Revisiting Source-Free Domain Adaptation: A New Perspective via Uncertainty Control*
-(UCon-SFDA), ICLR 2025, 공식 코드 [`xugezheng/UCon_SFDA`](https://github.com/xugezheng/UCon_SFDA).
-논문 본문(4장)까지 확인했는데, distributionally-robust-optimization 기반 contrastive loss(식 6~7,
-k-NN 양성쌍 + augmentation 기반 "가짜 음성쌍" dispersion control) 위에 partial-label 지도까지
-더한 구조로, **CACL과 근본적으로 같은 계열(contrastive loss)**이다. CACL이 고정된 classifier와
-구조적으로 안 맞아 실패했던 걸 감안하면 UCon-SFDA도 같은 문제를 겪을 가능성이 높고, 하이퍼파라미터도
-훨씬 많아(λ_CL, λ_DC, λ_PL, τ, K_PL) 구현·재조정에 드는 시간 대비 성공 가능성이 낮다고 판단해
-**구현하지 않고 이 판단 근거만 기록**으로 남긴다.
-
 ### 추가 시도: EATA (TENT의 최신 후속작) — SHOT을 넘지 못함
 
 AdaBN·TENT·SHOT 다음으로 더 최근·유명한 방법도 시도해봤다. **EATA**(Niu et al., *Efficient
@@ -404,7 +393,8 @@ bilinear로 96px에서 학습했다.
 | SHOT+APS+마스킹 | 36.41% ±6.29 | 24.07% ±4.88 | 18.95% ±0.69 |
 
 (seed 42/123/2026 세 번 실행의 평균±표준편차, %p. 내부 테스트 정확도도 96.59/95.93/96.52%로
-seed마다 흔들려 ±0.30%p 변동이 있다.)
+seed마다 흔들려 ±0.30%p 변동이 있다. 이 표의 PlantDoc 수치는 2026-10-15 콘택트시트 재검수
+이전(709장) 기준이다 — 재검수 이후(701장) 최신값은 아래 "최종 결과" 표를 참고.)
 
 seed42 단일 실행에서는 APS가 Taiwan을 42.04%→44.59%로 뚜렷하게 개선하는 것처럼 보였지만, **3-seed로
 보면 SHOT+APS가 SHOT보다 모든 데이터셋에서 평균이 오히려 살짝 낮다**(Taiwan -1.17%p, Bangladesh
@@ -449,7 +439,7 @@ seed42의 특정 pseudo-label 초기 상태에 과적합할 위험도 같이 커
 그 과적합이 다른 seed에서 "개선"이 아니라 "붕괴"로 나타났다. **모든 하이퍼파라미터 탐색은
 반드시 3-seed로 재검증한 뒤에만 "성능 향상"이라고 보고해야 한다**는 원칙을 이번에도 재확인했다
 — 그래서 두 설정 다 최종 파이프라인에 반영하지 않고, `마스킹+SHOT(epoch=2)`(3-seed 검증된
-Taiwan 37.58%±5.86·Bangladesh 24.28%±5.62·PlantDoc 19.75%±1.40)를 최종으로 유지한다.
+Taiwan 37.58%±5.86·Bangladesh 24.28%±5.62·PlantDoc 18.40%±0.50)를 최종으로 유지한다.
 `_balanced_assign`/`--shot-exclude-classes`는 코드에는 남겨 두되(재현·추가 실험용), 기본
 파이프라인에는 포함하지 않는다.
 
@@ -515,8 +505,8 @@ seed42 정확도가 45%대까지 계속 오르길래 **weight=4.0(Taiwan만 극�
 
 | 설정 | Taiwan 3-seed | Bangladesh 3-seed | PlantDoc 3-seed |
 |---|---|---|---|
-| SHOT(epoch=2) | 37.58% ±5.86 | 24.28% ±5.62 | 19.75% ±1.40 |
-| **SHOT+AaD(weight=1.0, 최종)** | 38.11% ±5.81(거의 동일) | **27.40% ±3.85**(+3.1%p, 분산도 더 작음) | 19.09% ±1.18(거의 동일) |
+| SHOT(epoch=2) | 37.58% ±5.86 | 24.28% ±5.62 | 18.40% ±0.50 |
+| **SHOT+AaD(weight=1.0, 최종)** | 38.11% ±5.81(거의 동일) | **27.40% ±3.85**(+3.1%p, 분산도 더 작음) | 17.97% ±1.13(거의 동일) |
 | SHOT+AaD(Taiwan만 weight=4.0) | 38.75% ±6.10(거의 동일) | (측정 안 함, weight=1.0과 동일할 것으로 가정) | (측정 안 함) |
 
 **결론 두 가지.** 첫째, **weight=4.0로 Taiwan을 더 세게 밀어도 3-seed 평균은 weight=1.0과
@@ -569,7 +559,7 @@ prototype-sharpen, TTA) 중 3-seed 검증을 통과해 실제로 채택된 것�
 
 ### 연구 방향 재정리와 가설 검증
 
-지금까지의 진단(심층 진단 절)과 추가 시도(UPA/R-GV/EATA/UCon-SFDA 절) 결과를 바탕으로, 이 프로젝트의
+지금까지의 진단(심층 진단 절)과 추가 시도(UPA/R-GV/EATA 절) 결과를 바탕으로, 이 프로젝트의
 Domain Adaptation 부분은 "여러 방법을 똑같이 돌려서 비교"하는 단계를 넘어 **데이터셋마다 다른
 실패 원인에 맞춰 다른 개선 전략을 검증**하는 단계로 재정의한다.
 
@@ -624,14 +614,15 @@ Corruption 강건성 절에서 이미 "밝기 변화에 가장 취약하다"고 
 | PlantVillage Tomato | 학습 · 내부 평가 | 18,160장 / 10개 클래스 (70/15/15 그룹 단위 분할: train 12,706 / val 2,727 / test 2,727) |
 | Taiwan Tomato | 외부 환경 평가 (학습 안 함) | 314장, 겹치는 3개 클래스만 사용 |
 | Bangladesh Tomato Leaf | 외부 환경 + BBox 평가 (학습 안 함) | 1,101장, YOLO bbox + 40% 여백 + 최소 96px 크롭 |
-| PlantDoc | 외부 환경 평가 (학습 안 함) | 709장, 8개 클래스 대응 (Google/Bing 이미지 검색 기반, 원본 746장 중 진단표·비교 콜라주 등 35장 제외) |
+| PlantDoc | 외부 환경 평가 (학습 안 함) | 701장, 8개 클래스 대응 (Google/Bing 이미지 검색 기반, 원본 746장 중 spider mites 2장(대응 클래스 없음) + 콘택트시트 재검수로 확인한 문제 이미지 43장, 총 45장 제외) |
 | Corruption 변형셋 | 4단계 강건성 평가 전용 | test셋 × 6조건 × 3단계 = 49,086장 |
 
 품질 검증: 이미지 무결성(20,284장 전수, 콘텐츠 문제 0건) · 클래스 불균형 기록(보정 없이 자연 분포 사용,
 14.36배) · train/test leakage 검사(perceptual hash, 근접중복 0.62~0.88%는 재분할 불필요 수준이었지만
 완전 동일 이미지가 소수 발견되어(test-train 3장, val-train 4장) 그룹 단위 분할로 개선 후 재검증 결과
 완전 동일 0건 — 아래 [그룹 단위 분할](#그룹-단위-분할-leakage-방지) 참고) · PlantDoc은 콘택트시트
-수작업 검수로 잎 사진이 아닌 이미지(진단표/비교 콜라주/삽화) 35장을 걸러냄.
+수작업 검수로 잎 사진이 아닌 이미지(진단표/비교 콜라주/삽화) 43장을 걸러냄(1차 35장 + 2026-10-15
+재검수에서 추가로 찾은 8장).
 
 ## 실험 로드맵
 

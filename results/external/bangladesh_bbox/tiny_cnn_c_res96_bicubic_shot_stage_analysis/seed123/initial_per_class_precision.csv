@@ -1,0 +1,13 @@
+﻿epoch,stage,class,precision,recall,predicted_count,true_count
+0,source softmax,Tomato___Bacterial_spot,0.1719,0.1183,64,93
+0,source softmax,Tomato___Early_blight,0.0927,0.3333,302,84
+0,source softmax,Tomato___Late_blight,0.181,0.7151,707,179
+0,source softmax,Tomato___Leaf_Mold,0.0,0.0,0,303
+0,source softmax,Tomato___Target_Spot,0.0,0.0,0,47
+0,source softmax,Tomato___healthy,0.3214,0.0228,28,395
+1,초기 SHOT pseudo-label,Tomato___Bacterial_spot,0.1689,0.3978,219,93
+1,초기 SHOT pseudo-label,Tomato___Early_blight,0.0819,0.1667,171,84
+1,초기 SHOT pseudo-label,Tomato___Late_blight,0.4074,0.4916,216,179
+1,초기 SHOT pseudo-label,Tomato___Leaf_Mold,0.2632,0.0825,95,303
+1,초기 SHOT pseudo-label,Tomato___Target_Spot,0.0374,0.234,294,47
+1,초기 SHOT pseudo-label,Tomato___healthy,0.3302,0.0886,106,395
